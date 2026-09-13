@@ -79,7 +79,7 @@ main{padding:15px 15px 36px}.panel{display:none}.panel.active{display:block}.sec
 
 const PLAYLIST_ID='PLDThR_8ShZAFTVEZgp2jtZaha8bThHZXB';
 const STORAGE_PREFIX='worship_fast_v3_';
-const APP_VERSION='v3.9.1';
+const APP_VERSION='v3.9.2';
 const BOOTSTRAP_TIMEOUT_MS=25000;
 const MUTATE_TIMEOUT_MS=25000;
 
@@ -542,19 +542,22 @@ function isInherited(date,roleId){
 }
 
 function prayerNameForSunday(d){
-  const arr=STATE.prayerOrder;
+  const arr=Array.isArray(STATE&&STATE.prayerOrder)?STATE.prayerOrder.filter(x=>x&&typeof x==='object'):[];
   if(!arr.length)return'미정';
-
-  const anchor=STATE.config.PRAYER_ANCHOR_DATE||'2026-09-13';
-  const anchorId=STATE.config.PRAYER_ANCHOR_MEMBER_ID||'m_parkseongin';
+  const cfg=(STATE&&STATE.config)||{};
+  const anchor=cfg.PRAYER_ANCHOR_DATE||'2026-09-13';
+  const anchorId=cfg.PRAYER_ANCHOR_MEMBER_ID||'m_parkseongin';
   const ad=new Date(anchor+'T00:00:00');
-  const weeks=Math.round((d-ad)/86400000/7);
-
-  let anchorIndex=arr.findIndex(x=>String(x.member_id)===String(anchorId));
+  const target=d instanceof Date?d:new Date(d);
+  const weeks=Math.round((target-ad)/86400000/7);
+  if(!Number.isFinite(weeks))return'미정';
+  let anchorIndex=arr.findIndex(x=>String(x.member_id||x.memberId||'')===String(anchorId));
   if(anchorIndex<0)anchorIndex=0;
-
-  const row=arr[((anchorIndex+weeks)%arr.length+arr.length)%arr.length];
-  return row.display_name||((getMember(row.member_id)||{}).member_name)||'미정';
+  const index=((anchorIndex+weeks)%arr.length+arr.length)%arr.length;
+  const row=arr[index];
+  if(!row)return'미정';
+  const memberId=row.member_id||row.memberId||'';
+  return row.display_name||row.displayName||((getMember(memberId)||{}).member_name)||((getMember(memberId)||{}).name)||'미정';
 }
 
 
@@ -585,12 +588,17 @@ function upcomingWorshipDates(count=2){
 
 function renderAll(){
   if(!STATE)return;
-  renderHeader();
-  renderWeek();
-  renderMonth();
-  renderPrayer();
-  renderPlaylist();
-  renderSettings();
+  STATE.prayerOrder=Array.isArray(STATE.prayerOrder)?STATE.prayerOrder.filter(x=>x&&typeof x==='object'):[];
+  STATE.roles=Array.isArray(STATE.roles)?STATE.roles.filter(Boolean):[];
+  STATE.members=Array.isArray(STATE.members)?STATE.members.filter(Boolean):[];
+  STATE.memberRoles=Array.isArray(STATE.memberRoles)?STATE.memberRoles.filter(Boolean):[];
+  STATE.events=Array.isArray(STATE.events)?STATE.events.filter(Boolean):[];
+  STATE.assignments=Array.isArray(STATE.assignments)?STATE.assignments.filter(Boolean):[];
+  STATE.rotationBase=Array.isArray(STATE.rotationBase)?STATE.rotationBase.filter(Boolean):[];
+  STATE.holidays=Array.isArray(STATE.holidays)?STATE.holidays.filter(Boolean):[];
+  [['header',renderHeader],['week',renderWeek],['month',renderMonth],['prayer',renderPrayer],['playlist',renderPlaylist],['settings',renderSettings]].forEach(([name,fn])=>{
+    try{fn()}catch(e){try{logEvent('ERROR','RENDER_SECTION_FAIL',`section=${name} msg=${e&&e.message?e.message:e}`)}catch(_){}}
+  });
 }
 
 function renderHeader(){
@@ -733,12 +741,17 @@ ${order.join(' - ')}`;
   document.getElementById('prayerUpcoming').innerHTML=upcoming;
 }
 function renderPlaylist(){
-  const playlistUrl=STATE&&STATE.config&&STATE.config.PLAYLIST_URL
-    ?STATE.config.PLAYLIST_URL
-    :`https://youtube.com/playlist?list=${PLAYLIST_ID}`;
-
-  document.getElementById('youtubeFrame').src=`https://www.youtube.com/embed/videoseries?list=${PLAYLIST_ID}`;
-  document.getElementById('youtubeLink').href=playlistUrl;
+  const cfg=(STATE&&STATE.config)||{};
+  const playlistUrl=cfg.PLAYLIST_URL?cfg.PLAYLIST_URL:`https://youtube.com/playlist?list=${PLAYLIST_ID}`;
+  const match=String(playlistUrl).match(/[?&]list=([^&]+)/);
+  const playlistId=match?decodeURIComponent(match[1]):PLAYLIST_ID;
+  const frame=document.getElementById('youtubeFrame');
+  if(frame){
+    const nextSrc=`https://www.youtube-nocookie.com/embed/videoseries?list=${encodeURIComponent(playlistId)}&playsinline=1&rel=0`;
+    if(frame.dataset.playlistId!==playlistId){frame.dataset.playlistId=playlistId;frame.referrerPolicy='origin';frame.src=nextSrc;}
+  }
+  const link=document.getElementById('youtubeLink');
+  if(link)link.href=playlistUrl;
 }
 
 function formatBytes(n){
