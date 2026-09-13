@@ -1,4 +1,4 @@
-name: Worship hotfix v3.9.2
+name: Worship schedule backend latency optimization
 
 on:
   push:
@@ -9,84 +9,119 @@ permissions:
   contents: write
 
 jobs:
-  hotfix:
+  optimize:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Patch index.html
+        with:
+          fetch-depth: 0
+
+      - name: Build complete optimized schedule backend
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
           import re
-          p=Path('index.html')
-          s=p.read_text(encoding='utf-8')
-          s=s.replace('v3.9.1','v3.9.2')
-          prayer=re.compile(r"function prayerNameForSunday\(d\)\{.*?\n\}\n\n\nfunction currentTodayKey",re.S)
-          s,c1=prayer.subn(r'''function prayerNameForSunday(d){
-            const arr=Array.isArray(STATE&&STATE.prayerOrder)?STATE.prayerOrder.filter(x=>x&&typeof x==='object'):[];
-            if(!arr.length)return'미정';
-            const cfg=(STATE&&STATE.config)||{};
-            const anchor=cfg.PRAYER_ANCHOR_DATE||'2026-09-13';
-            const anchorId=cfg.PRAYER_ANCHOR_MEMBER_ID||'m_parkseongin';
-            const ad=new Date(anchor+'T00:00:00');
-            const target=d instanceof Date?d:new Date(d);
-            const weeks=Math.round((target-ad)/86400000/7);
-            if(!Number.isFinite(weeks))return'미정';
-            let anchorIndex=arr.findIndex(x=>String(x.member_id||x.memberId||'')===String(anchorId));
-            if(anchorIndex<0)anchorIndex=0;
-            const index=((anchorIndex+weeks)%arr.length+arr.length)%arr.length;
-            const row=arr[index];
-            if(!row)return'미정';
-            const memberId=row.member_id||row.memberId||'';
-            return row.display_name||row.displayName||((getMember(memberId)||{}).member_name)||((getMember(memberId)||{}).name)||'미정';
-          }
 
+          src = Path('Code.gs.txt')
+          dst = Path('Code_FAST_SCHEDULE.gs.txt')
+          s = src.read_text(encoding='utf-8')
 
-          function currentTodayKey''',s,count=1)
-          render=re.compile(r"function renderAll\(\)\{.*?\n\}\n\nfunction renderHeader",re.S)
-          s,c2=render.subn(r'''function renderAll(){
-            if(!STATE)return;
-            STATE.prayerOrder=Array.isArray(STATE.prayerOrder)?STATE.prayerOrder.filter(x=>x&&typeof x==='object'):[];
-            STATE.roles=Array.isArray(STATE.roles)?STATE.roles.filter(Boolean):[];
-            STATE.members=Array.isArray(STATE.members)?STATE.members.filter(Boolean):[];
-            STATE.memberRoles=Array.isArray(STATE.memberRoles)?STATE.memberRoles.filter(Boolean):[];
-            STATE.events=Array.isArray(STATE.events)?STATE.events.filter(Boolean):[];
-            STATE.assignments=Array.isArray(STATE.assignments)?STATE.assignments.filter(Boolean):[];
-            STATE.rotationBase=Array.isArray(STATE.rotationBase)?STATE.rotationBase.filter(Boolean):[];
-            STATE.holidays=Array.isArray(STATE.holidays)?STATE.holidays.filter(Boolean):[];
-            [['header',renderHeader],['week',renderWeek],['month',renderMonth],['prayer',renderPrayer],['playlist',renderPlaylist],['settings',renderSettings]].forEach(([name,fn])=>{
-              try{fn()}catch(e){try{logEvent('ERROR','RENDER_SECTION_FAIL',`section=${name} msg=${e&&e.message?e.message:e}`)}catch(_){}}
-            });
-          }
+          forbidden = ['DriveApp', 'function doPost', 'uploadStart', 'uploadChunk', 'worship-score']
+          bad = [x for x in forbidden if x in s]
+          if bad:
+              raise SystemExit('schedule source unexpectedly contains: ' + ', '.join(bad))
 
-          function renderHeader''',s,count=1)
-          playlist=re.compile(r"function renderPlaylist\(\)\{.*?\n\}\n\nfunction formatBytes",re.S)
-          s,c3=playlist.subn(r'''function renderPlaylist(){
-            const cfg=(STATE&&STATE.config)||{};
-            const playlistUrl=cfg.PLAYLIST_URL?cfg.PLAYLIST_URL:`https://youtube.com/playlist?list=${PLAYLIST_ID}`;
-            const match=String(playlistUrl).match(/[?&]list=([^&]+)/);
-            const playlistId=match?decodeURIComponent(match[1]):PLAYLIST_ID;
-            const frame=document.getElementById('youtubeFrame');
-            if(frame){
-              const nextSrc=`https://www.youtube-nocookie.com/embed/videoseries?list=${encodeURIComponent(playlistId)}&playsinline=1&rel=0`;
-              if(frame.dataset.playlistId!==playlistId){frame.dataset.playlistId=playlistId;frame.referrerPolicy='origin';frame.src=nextSrc;}
+          s = s.replace(
+              '  CACHE_SECONDS: 20,',
+              "  CACHE_SECONDS: 300,\n  REV_CACHE_KEY: 'WORSHIP_REVISION_V1',\n  REV_CACHE_SECONDS: 300,",
+              1
+          )
+
+          s = s.replace(
+              '  const ss = worshipDb_();\n  worshipValidateSchema_(ss);\n  const configRows = worshipReadTable_(ss, WORSHIP_API.SHEETS.CONFIG).objects;',
+              '  const ss = worshipDb_();\n  const configRows = worshipReadTable_(ss, WORSHIP_API.SHEETS.CONFIG).objects;',
+              1
+          )
+
+          revision = re.compile(r"function worshipGetRevision_\(\) \{.*?\n\}\n\nfunction worshipMutate_", re.S)
+          replacement = '''function worshipGetRevision_() {
+            const cache = CacheService.getScriptCache();
+            try {
+              const cached = cache.get(WORSHIP_API.REV_CACHE_KEY);
+              if (cached !== null && cached !== '') return Number(cached || 1);
+            } catch (_) {}
+
+            const ss = worshipDb_();
+            const sheet = ss.getSheetByName(WORSHIP_API.SHEETS.CONFIG);
+            if (!sheet) throw new Error('필수 시트가 없습니다: ' + WORSHIP_API.SHEETS.CONFIG);
+            const lastRow = sheet.getLastRow();
+            let revision = 1;
+            if (lastRow >= 2) {
+              const rows = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
+              for (let i = 0; i < rows.length; i++) {
+                if (String(rows[i][0]) === 'STATE_REVISION') {
+                  revision = Number(rows[i][1] || 1);
+                  break;
+                }
+              }
             }
-            const link=document.getElementById('youtubeLink');
-            if(link)link.href=playlistUrl;
+            try { cache.put(WORSHIP_API.REV_CACHE_KEY, String(revision), WORSHIP_API.REV_CACHE_SECONDS); } catch (_) {}
+            return revision;
           }
 
-          function formatBytes''',s,count=1)
-          if (c1,c2,c3)!=(1,1,1): raise SystemExit(f'patch counts: prayer={c1}, render={c2}, playlist={c3}')
-          p.write_text(s,encoding='utf-8')
+          function worshipMutate_'''
+          s, count = revision.subn(replacement, s, count=1)
+          if count != 1:
+              raise SystemExit('revision function replacement failed')
+
+          old = '  try { cache.put(WORSHIP_API.CACHE_KEY, JSON.stringify(data), WORSHIP_API.CACHE_SECONDS); } catch (_) {}\n  return { ok: true, data };'
+          new = '''  try {
+            cache.put(WORSHIP_API.CACHE_KEY, JSON.stringify(data), WORSHIP_API.CACHE_SECONDS);
+            cache.put(WORSHIP_API.REV_CACHE_KEY, String(data.revision || 1), WORSHIP_API.REV_CACHE_SECONDS);
+          } catch (_) {}
+          return { ok: true, data };'''
+          if old not in s:
+              raise SystemExit('bootstrap cache replacement target missing')
+          s = s.replace(old, new, 1)
+
+          old = '    CacheService.getScriptCache().remove(WORSHIP_API.CACHE_KEY);\n    return { ok:true, revision, structural };'
+          new = '''    const scriptCache = CacheService.getScriptCache();
+            scriptCache.remove(WORSHIP_API.CACHE_KEY);
+            try { scriptCache.put(WORSHIP_API.REV_CACHE_KEY, String(revision), WORSHIP_API.REV_CACHE_SECONDS); } catch (_) {}
+            return { ok:true, revision, structural };'''
+          if old not in s:
+              raise SystemExit('mutation cache replacement target missing')
+          s = s.replace(old, new, 1)
+
+          s = s.replace(' * - POST: 악보 meta / uploadStart / uploadChunk / delete\n', ' * - 일정 전용: Drive/악보 업로드 코드 없음\n', 1)
+          s = s.replace('WORSHIP-SCHEDULE standalone Apps Script backend', 'WORSHIP-SCHEDULE standalone Apps Script backend - optimized schedule-only', 1)
+
+          for marker in ['CACHE_SECONDS: 300', 'REV_CACHE_KEY', 'REV_CACHE_SECONDS: 300']:
+              if marker not in s:
+                  raise SystemExit('missing optimization marker: ' + marker)
+          bad = [x for x in forbidden if x in s]
+          if bad:
+              raise SystemExit('optimized file contains forbidden code: ' + ', '.join(bad))
+
+          dst.write_text(s, encoding='utf-8')
           PY
-      - name: Commit hotfix
+
+          cp Code_FAST_SCHEDULE.gs.txt /tmp/code_fast_schedule.js
+          node --check /tmp/code_fast_schedule.js
+          ! grep -q 'DriveApp' Code_FAST_SCHEDULE.gs.txt
+          ! grep -q 'function doPost' Code_FAST_SCHEDULE.gs.txt
+          ! grep -q 'uploadStart' Code_FAST_SCHEDULE.gs.txt
+          grep -q 'CACHE_SECONDS: 300' Code_FAST_SCHEDULE.gs.txt
+          grep -q 'REV_CACHE_KEY' Code_FAST_SCHEDULE.gs.txt
+
+      - name: Commit optimized full replacement file
         shell: bash
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add index.html
+          git add Code_FAST_SCHEDULE.gs.txt
           git diff --cached --quiet && exit 0
-          git commit -m 'fix worship prayer render and YouTube load'
+          git commit -m 'build optimized schedule-only Apps Script backend'
           git push
