@@ -13,217 +13,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Patch index.html and run preflight checks
+      - name: Patch index.html
+        run: python3 .github/hotfix_v31.py
+
+      - name: Static preflight
         shell: bash
         run: |
-          python3 <<'PY'
-          from pathlib import Path
-
-          p = Path('index.html')
-          s = p.read_text(encoding='utf-8')
-
-          # Idempotent: a second execution should only validate and exit.
-          if "const APP_VERSION='v3.1';" not in s:
-              def replace_once(text, old, new, label):
-                  count = text.count(old)
-                  if count != 1:
-                      raise SystemExit(f'PATCH FAIL [{label}] expected 1 match, got {count}')
-                  return text.replace(old, new, 1)
-
-              s = replace_once(s,
-                  "const APP_VERSION='v3.0';",
-                  "const APP_VERSION='v3.1';\nconst BOOTSTRAP_TIMEOUT_MS=25000;\nconst MUTATE_TIMEOUT_MS=25000;",
-                  'version/constants')
-
-              s = replace_once(s,
-                  "let pollTimer=null;",
-                  "let pollTimer=null;\nlet needsFullRefresh=false;",
-                  'refresh flag')
-
-              s = replace_once(s,
-                  "function jsonp(action,params={},timeout=15000){",
-                  "function jsonp(action,params={},timeout=15000,options={}){",
-                  'jsonp signature')
-
-              s = replace_once(s,
-                  "if(err){logEvent('ERROR','API_FAIL',`action=${action} ms=${Math.round(performance.now()-started)} msg=${err.message||err}`);reject(err)}else{logEvent('INFO','API_OK',`action=${action} ms=${Math.round(performance.now()-started)}`);resolve(data)}",
-                  "if(err){logEvent(options.background?'WARN':'ERROR',options.background?'API_FAIL_BG':'API_FAIL',`action=${action} ms=${Math.round(performance.now()-started)} msg=${err.message||err}`);reject(err)}else{logEvent('INFO','API_OK',`action=${action} ms=${Math.round(performance.now()-started)}`);resolve(data)}",
-                  'jsonp background logging')
-
-              old_bootstrap = r'''async function bootstrap(showLoading=true){
-  const started=performance.now();
-  setProcess(STATE?'동기화 중…':'연결 중…','working');
-  clearConnectionError();
-  logEvent('INFO','BOOTSTRAP_START',`cached=${!!STATE}`);
-
-  try{
-    const res=await jsonp('bootstrap',{},15000);
-    if(!res||!res.ok)throw new Error((res&&res.error)||'초기 데이터를 불러오지 못했습니다.');
-
-    STATE=res.data;
-    pending.forEach(applyOptimistic);
-    cacheState();
-
-    const today=new Date((STATE.serverToday||keyOf(new Date()))+'T00:00:00');
-    if(!viewMonth)viewMonth=new Date(today.getFullYear(),today.getMonth(),1);
-
-    renderAll();
-    setProcess('연결 완료','ok');
-    logEvent('INFO','BOOTSTRAP_OK',`ms=${Math.round(performance.now()-started)} revision=${STATE.revision}`);
-
-    if(pending.length)flushQueue();
-  }catch(e){
-    logEvent('ERROR','BOOTSTRAP_FAIL',e&&e.message?e.message:String(e));
-    if(STATE){
-      renderAll();
-      setProcess(navigator.onLine?'동기화 실패 · 캐시 사용':'오프라인 · 캐시 사용',navigator.onLine?'error':'offline');
-      showToast('기존 데이터로 표시 중');
-    }else{
-      showApiError(e&&e.message?e.message:String(e));
-    }
-  }
-}'''
-              new_bootstrap = r'''async function bootstrap(showLoading=true,silentFailure=false){
-  const started=performance.now();
-  if(!silentFailure){
-    setProcess(STATE?'동기화 중…':'연결 중…','working');
-    clearConnectionError();
-  }
-  logEvent('INFO',silentFailure?'BOOTSTRAP_BG_START':'BOOTSTRAP_START',`cached=${!!STATE}`);
-
-  try{
-    const res=await jsonp('bootstrap',{},BOOTSTRAP_TIMEOUT_MS,{background:silentFailure});
-    if(!res||!res.ok)throw new Error((res&&res.error)||'초기 데이터를 불러오지 못했습니다.');
-
-    STATE=res.data;
-    pending.forEach(applyOptimistic);
-    cacheState();
-    needsFullRefresh=false;
-
-    const today=new Date((STATE.serverToday||keyOf(new Date()))+'T00:00:00');
-    if(!viewMonth)viewMonth=new Date(today.getFullYear(),today.getMonth(),1);
-
-    renderAll();
-    clearConnectionError();
-    if(!silentFailure||['동기화 중…','연결 중…','오프라인','동기화 실패 · 캐시 사용'].includes(processStatus)){
-      setProcess('연결 완료','ok');
-    }
-    logEvent('INFO',silentFailure?'BOOTSTRAP_BG_OK':'BOOTSTRAP_OK',`ms=${Math.round(performance.now()-started)} revision=${STATE.revision}`);
-
-    if(pending.length)flushQueue();
-    return true;
-  }catch(e){
-    if(silentFailure&&STATE){
-      logEvent('WARN','BOOTSTRAP_BG_FAIL',e&&e.message?e.message:String(e));
-      return false;
-    }
-    logEvent('ERROR','BOOTSTRAP_FAIL',e&&e.message?e.message:String(e));
-    if(STATE){
-      renderAll();
-      setProcess(navigator.onLine?'동기화 실패 · 캐시 사용':'오프라인 · 캐시 사용',navigator.onLine?'error':'offline');
-      showToast('기존 데이터로 표시 중');
-    }else{
-      showApiError(e&&e.message?e.message:String(e));
-    }
-    return false;
-  }
-}'''
-              s = replace_once(s, old_bootstrap, new_bootstrap, 'bootstrap')
-
-              s = replace_once(s,
-                  "const res=await jsonp('mutate',{payload:JSON.stringify(m)},12000);",
-                  "const res=await jsonp('mutate',{payload:JSON.stringify(m)},MUTATE_TIMEOUT_MS);",
-                  'mutate timeout')
-
-              old_refresh = r'''    // 서버 생성 ID/구조 변화 또는 로테이션 스냅샷은 백그라운드에서만 재동기화합니다.
-    if((m.type==='memberSave'&&!m.payload.memberId)||['memberDelete','roleSave','roleDelete','prayerOrderSet','rotationComplete'].includes(m.type)){
-      bootstrap(false);
-    }'''
-              new_refresh = r'''    // 서버 생성 ID/구조 변화 또는 로테이션 스냅샷은 백그라운드에서 재동기화합니다.
-    // 실패해도 저장 성공 상태를 오류로 덮지 않고, pollRevision에서 성공할 때까지 다시 시도합니다.
-    if((m.type==='memberSave'&&!m.payload.memberId)||['memberDelete','roleSave','roleDelete','prayerOrderSet','rotationComplete'].includes(m.type)){
-      needsFullRefresh=true;
-      logEvent('INFO','POST_SAVE_REFRESH',`type=${m.type}`);
-      bootstrap(false,true);
-    }'''
-              s = replace_once(s, old_refresh, new_refresh, 'post save refresh')
-
-              s = replace_once(s,
-                  "    // 실패한 낙관 변경을 서버/캐시 기준으로 되돌림. UI는 가리지 않습니다.\n    bootstrap(false);",
-                  "    // 실패한 낙관 변경을 서버/캐시 기준으로 되돌리되 저장 실패 상태는 유지합니다.\n    bootstrap(false,true);",
-                  'failure rollback refresh')
-
-              old_poll = r'''async function pollRevision(){
-  if(!STATE||pending.length)return;
-  try{
-    const r=await jsonp('revision',{},8000);
-    if(r&&r.ok&&Number(r.revision)!==Number(STATE.revision)){
-      logEvent('INFO','REMOTE_CHANGE',`local=${STATE.revision} remote=${r.revision}`);
-      await bootstrap(false);
-    }
-  }catch(e){logEvent('ERROR','REVISION_FAIL',e&&e.message?e.message:String(e))}
-}'''
-              new_poll = r'''async function pollRevision(){
-  if(!STATE||pending.length)return;
-  if(needsFullRefresh){
-    logEvent('INFO','POST_SAVE_REFRESH_RETRY','pending full refresh');
-    await bootstrap(false,true);
-    return;
-  }
-  try{
-    const r=await jsonp('revision',{},8000,{background:true});
-    if(r&&r.ok&&Number(r.revision)!==Number(STATE.revision)){
-      logEvent('INFO','REMOTE_CHANGE',`local=${STATE.revision} remote=${r.revision}`);
-      await bootstrap(false,true);
-    }
-  }catch(e){logEvent('WARN','REVISION_FAIL',e&&e.message?e.message:String(e))}
-}'''
-              s = replace_once(s, old_poll, new_poll, 'revision polling')
-
-              s = replace_once(s,
-                  "window.addEventListener('online',()=>{logEvent('INFO','NETWORK','online');if(pending.length)flushQueue();else bootstrap(false)});",
-                  "window.addEventListener('online',()=>{logEvent('INFO','NETWORK','online');if(pending.length)flushQueue();else bootstrap(false,!!STATE)});",
-                  'online refresh')
-
-              p.write_text(s, encoding='utf-8')
-
-          # Preflight invariants.
-          s = p.read_text(encoding='utf-8')
-          checks = {
-              'v3.1 marker': "const APP_VERSION='v3.1';" in s,
-              'mutation timeout': "MUTATE_TIMEOUT_MS=25000" in s and "JSON.stringify(m)},MUTATE_TIMEOUT_MS" in s,
-              'bootstrap timeout': "BOOTSTRAP_TIMEOUT_MS=25000" in s,
-              'silent bootstrap': "bootstrap(showLoading=true,silentFailure=false)" in s,
-              'background failure isolation': "BOOTSTRAP_BG_FAIL" in s and "API_FAIL_BG" in s,
-              'refresh retry flag': "needsFullRefresh=true" in s and "POST_SAVE_REFRESH_RETRY" in s,
-              'poll silent refresh': "await bootstrap(false,true);" in s,
-              'storage preserved': "const STORAGE_PREFIX='worship_fast_v3_';" in s,
-          }
-          failed = [name for name, ok in checks.items() if not ok]
-          if failed:
-              raise SystemExit('PREFLIGHT FAIL: ' + ', '.join(failed))
-
-          start = s.find('<script>')
-          end = s.rfind('</script>')
-          if start < 0 or end <= start:
-              raise SystemExit('PREFLIGHT FAIL: script block missing')
-          js = s[start + len('<script>'):end]
-          Path('/tmp/worship-app.js').write_text(js, encoding='utf-8')
-          print('PREFLIGHT OK:', ', '.join(checks.keys()))
-          PY
-
           node --check /tmp/worship-app.js
           test "$(grep -o "const APP_VERSION='v3.1';" index.html | wc -l)" -eq 1
           test "$(grep -o "function bootstrap(showLoading=true,silentFailure=false)" index.html | wc -l)" -eq 1
+          test "$(grep -o "MUTATE_TIMEOUT_MS=25000" index.html | wc -l)" -eq 1
           echo "STATIC PREFLIGHT OK"
 
-      - name: Commit hotfix and remove one-shot workflow
+      - name: Commit hotfix
         shell: bash
         run: |
-          rm -f .github/workflows/worship-v31-hotfix.yml
+          rm -f .github/workflows/worship-v31-hotfix.yml .github/hotfix_v31.py
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add index.html .github/workflows/worship-v31-hotfix.yml
+          git add index.html .github/workflows/worship-v31-hotfix.yml .github/hotfix_v31.py
           if git diff --cached --quiet; then
             echo "No changes required"
             exit 0
