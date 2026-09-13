@@ -1,5 +1,6 @@
 name: Promote Worship Schedule v3.7
 
+# rerun after dedicated Apps Script redeploy
 on:
   push:
     branches: [main]
