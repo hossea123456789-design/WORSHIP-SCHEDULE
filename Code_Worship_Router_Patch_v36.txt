@@ -1,0 +1,35 @@
+[WORSHIP-SCHEDULE v3.6 / 메이플 Code.gs 최소 라우터 패치]
+
+목적
+- 기존 메이플 장부 Code.gs 로직은 그대로 유지합니다.
+- 찬양팀 프론트의 ?app=worship 요청만 WorshipApi.gs의 handleWorshipApi_(e)로 넘깁니다.
+- 이 패치만으로 revision / bootstrap / mutate JSONP가 다시 WorshipApi.gs로 들어갑니다.
+
+적용 위치
+기존 Code.gs의 function doGet(e) { 바로 다음 줄에 아래 4줄만 추가합니다.
+
+  const __worshipParams = (e && e.parameter) || {};
+  if (String(__worshipParams.app || '') === 'worship') {
+    return handleWorshipApi_(e);
+  }
+
+예시
+
+function doGet(e) {
+  const __worshipParams = (e && e.parameter) || {};
+  if (String(__worshipParams.app || '') === 'worship') {
+    return handleWorshipApi_(e);
+  }
+
+  // ↓ 아래부터 기존 메이플 Code.gs 내용은 한 글자도 바꾸지 않습니다.
+  const action = e.parameter.action;
+  ...
+}
+
+주의
+- function doGet(e) 자체를 새로 하나 더 만들지 않습니다.
+- 기존 doGet(e) 내부 맨 앞에 위 분기만 추가합니다.
+- Code.gs의 나머지 메이플 action 분기는 그대로 둡니다.
+- 현재 단계에서는 doPost(e)는 수정하지 않습니다. 악보 업로드는 일정 API 정상화 확인 후 별도로 붙입니다.
+- 수정 후 저장 → 배포 관리 → 현재 사용 중인 웹 앱 배포 편집 → 새 버전 → 배포.
+- 새 배포를 따로 만들지 않습니다. 기존 /exec URL을 유지해야 합니다.
