@@ -1,5 +1,6 @@
 // WORSHIP-SCHEDULE Score Upload Add-on
 // Apps Script 프로젝트의 새 .gs 파일에 그대로 붙여넣으세요.
+// 주의: 이 파일은 doPost를 정의하지 않습니다. 기존 Code.gs의 단일 doPost에서 handleWorshipScorePost_(e)로 라우팅해야 합니다.
 // v3.4: 대용량 악보를 Google Drive resumable upload로 분할 전송합니다.
 
 const SCORE_STORE = Object.freeze({
@@ -15,7 +16,7 @@ const SCORE_STORE = Object.freeze({
   MAX_BYTES: 25 * 1024 * 1024
 });
 
-function doPost(e) {
+function handleWorshipScorePost_(e) {
   const p = (e && e.parameter) || {};
   const requestId = String(p.requestId || '');
   try {
