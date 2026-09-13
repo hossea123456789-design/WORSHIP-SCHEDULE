@@ -1,4 +1,4 @@
-name: Promote Worship v3.8
+name: Worship frontend hotfix v3.9
 on:
   push:
     branches: [main]
@@ -6,42 +6,213 @@ on:
 permissions:
   contents: write
 jobs:
-  promote:
+  patch:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Build v3.8 from verified score-ready frontend
+      - name: Patch upcoming schedule and score viewer
         run: |
-          cp index_v37_ready.html index.html
           python3 - <<'PY'
           from pathlib import Path
+          import re
+
           p=Path('index.html')
           s=p.read_text(encoding='utf-8')
-          old='https://script.google.com/macros/s/AKfycby9srJlhi9sWjpMxJSpyhWgkNRP6RwOyVDRyPRsUDDSceflQgnFP9A7yXaGIXGuj9Ad0Q/exec'
-          schedule='https://script.google.com/macros/s/AKfycbwwYV6CBces0jCFTndl9EoKL_LU7P55TJ2eLrT1qCH0aL-XxZggaPClwz4FuZgZ3KulaQ/exec'
-          score='https://script.google.com/macros/s/AKfycbxyjSCotbCTOQ54H3IqutFZM0xQRF-92_bvJWMNcJKWdgqQjGgThiGFBtRmK1LlXObOdQ/exec'
-          s=s.replace("const APP_VERSION='v3.7-ready';","const APP_VERSION='v3.8';",1)
-          s=s.replace(old,schedule)
-          s=s.replace('form.action=API_URL;',"form.action='"+score+"';")
+
+          # Version
+          s=re.sub(r"const APP_VERSION='v3\.8';", "const APP_VERSION='v3.9';", s, count=1)
+
+          # Helper: actual upcoming worship dates, excluding anything before serverToday.
+          helper=r'''
+function upcomingWorshipDates(count=2){
+  const today=STATE.serverToday||keyOf(new Date());
+  const start=new Date(today+'T00:00:00');
+  const out=[];
+  let y=start.getFullYear(),m=start.getMonth();
+
+  for(let step=0;step<18&&out.length<count;step++){
+    const mk=`${y}-${String(m+1).padStart(2,'0')}`;
+    selectedDates(mk).forEach(date=>{
+      if(date>=today&&!out.includes(date))out.push(date);
+    });
+    m++;
+    if(m>=12){m=0;y++}
+  }
+
+  return out.sort().slice(0,count);
+}
+
+'''
+          marker='function renderAll(){'
+          if 'function upcomingWorshipDates(' not in s:
+            s=s.replace(marker,helper+marker,1)
+
+          # Main upcoming cards: never show a date before today.
+          a=s.index('function renderWeek(){')
+          b=s.index('\nfunction renderMonth(){',a)
+          render_week=r'''function renderWeek(){
+  const dates=upcomingWorshipDates(2);
+  const weeks=dates.map((date,i)=>({
+    date,
+    d:new Date(date+'T00:00:00'),
+    title:i===0?'이번 주':'다음 주',
+    badge:i===0?'THIS WEEK':'NEXT WEEK'
+  }));
+
+  if(!weeks.length){
+    document.getElementById('weekCards').innerHTML='<div class="card weekCard"><div class="weekHead"><div class="weekTitle">예정된 찬양 일정이 없습니다</div></div></div>';
+    return;
+  }
+
+  document.getElementById('weekCards').innerHTML=weeks.map(w=>{
+    const prayer=prayerNameForSunday(w.d);
+
+    return `<div class="card weekCard">
+      <div class="weekHead">
+        <div class="weekTitle">${w.title}<span class="weekBadge">${w.badge}</span></div>
+        <div class="dateLine">${w.d.getMonth()+1}월 ${w.d.getDate()}일 (${['일','월','화','수','목','금','토'][w.d.getDay()]}) · 기도 <b>${escapeHtml(prayer)}</b></div>
+      </div>
+      <div class="weekRoles">
+        ${STATE.roles.map(r=>{
+          const cls=roleClass(r);
+          const ids=effectiveMemberIds(w.date,r.role_id);
+          return `<div class="weekRole">
+            <div class="roleLabel"><span class="roleDot ${cls}"></span>${escapeHtml(r.role_name)}</div>
+            <div class="people">${ids.length
+              ?ids.map(id=>`<span class="person ${cls}">${escapeHtml((getMember(id)||{}).member_name||'알 수 없음')}</span>`).join('')
+              :'<span class="empty">미정</span>'
+            }</div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  }).join('');
+}'''
+          s=s[:a]+render_week+s[b:]
+
+          # Prayer guide follows the same upcoming-date rule.
+          a=s.index('function renderPrayer(){')
+          b=s.index('\nfunction renderPlaylist(){',a)
+          render_prayer=r'''function renderPrayer(){
+  const dates=upcomingWorshipDates(9);
+  if(!dates.length){
+    document.getElementById('prayerHero').innerHTML='<div class="info">예정된 기도 일정이 없습니다.</div>';
+    document.getElementById('prayerUpcoming').innerHTML='';
+    return;
+  }
+
+  const currentDate=dates[0];
+  const currentD=new Date(currentDate+'T00:00:00');
+  const nextDate=dates[1]||'';
+  const nextD=nextDate?new Date(nextDate+'T00:00:00'):null;
+  const current=prayerNameForSunday(currentD);
+  const nextName=nextD?prayerNameForSunday(nextD):'';
+
+  document.getElementById('prayerHero').innerHTML=`<div class="prayerHero">
+    <div><div class="small">이번 주 기도</div><div class="big">${escapeHtml(current)} 집사님</div><div class="dateLine">${currentD.getMonth()+1}월 ${currentD.getDate()}일</div></div>
+    ${nextD?`<div class="nextPrayer"><small>다음 주</small><b>${escapeHtml(nextName)}</b></div>`:''}
+  </div>`;
+
+  const order=STATE.prayerOrder
+    .map(x=>x.display_name||((getMember(x.member_id)||{}).member_name)||'')
+    .filter(Boolean);
+
+  document.getElementById('prayerCopyText').textContent=
+`안녕하세요~
+이번 주 기도는 ${current} 집사님 입니다.
+
+기도 순서
+${order.join(' - ')}`;
+
+  let upcoming='';
+  dates.forEach((date,i)=>{
+    const d=new Date(date+'T00:00:00');
+    upcoming+=`<div class="prayerRow ${i===0?'current':''}">
+      <div class="prayerNum">${i===0?'이번':i+1}</div>
+      <div class="prayerName">${escapeHtml(prayerNameForSunday(d))} 집사님</div>
+      <div class="prayerDate">${d.getMonth()+1}/${d.getDate()}</div>
+    </div>`;
+  });
+  document.getElementById('prayerUpcoming').innerHTML=upcoming;
+}'''
+          s=s[:a]+render_prayer+s[b:]
+
+          # Score viewer controls and larger PDF area.
+          if 'function openScoreFullscreen()' not in s:
+            marker='function renderScore(){'
+            fullfn=r'''function openScoreFullscreen(){
+  const box=document.querySelector('.scorePreview');
+  if(!box)return;
+  const fn=box.requestFullscreen||box.webkitRequestFullscreen;
+  if(fn){
+    try{fn.call(box)}catch(e){showToast('전체화면을 열지 못했습니다')}
+  }else if(SCORE_META&&SCORE_META.previewUrl){
+    window.open(SCORE_META.previewUrl,'_blank','noopener');
+  }
+}
+
+'''
+            s=s.replace(marker,fullfn+marker,1)
+
+          a=s.index('function renderScore(){')
+          b=s.index('\nfunction scorePost(',a)
+          render_score=r'''function renderScore(){
+  const area=document.getElementById('scoreArea');
+  const btn=document.getElementById('scoreUploadBtn');
+  if(!area||!btn)return;
+  btn.disabled=scoreBusy;
+  btn.textContent=scoreBusy?'업로드 중…':(SCORE_META?'+ 새 악보로 교체':'+ 악보 올리기');
+
+  if(!SCORE_META){
+    area.innerHTML='<div class="scoreEmpty"><b>등록된 악보가 없습니다</b><span>PDF · PPT · PPTX · DOC · DOCX · JPG · PNG 파일을 올릴 수 있습니다.<br>새 파일을 올리면 이전 악보는 자동 삭제됩니다.</span></div>';
+    return;
+  }
+
+  const f=SCORE_META;
+  const id=String(f.id||'');
+  const downloadUrl=id?`https://drive.google.com/uc?export=download&id=${encodeURIComponent(id)}`:(f.openUrl||'#');
+  area.innerHTML=`<div class="scoreMeta"><div><div class="scoreName">${escapeHtml(f.name||'악보')}</div><div class="scoreSub">${escapeHtml(f.updatedAt||'')}${f.size?` · ${formatBytes(f.size)}`:''}</div></div><div class="scoreActions"><a class="ghostBtn" style="text-decoration:none;display:inline-flex;align-items:center" href="${escapeHtml(downloadUrl)}" target="_blank" rel="noopener">다운로드</a><a class="ghostBtn" style="text-decoration:none;display:inline-flex;align-items:center" href="${escapeHtml(f.openUrl||'#')}" target="_blank" rel="noopener">새 창</a><button class="ghostBtn" type="button" onclick="openScoreFullscreen()">전체화면</button></div></div><div class="scorePreview"><iframe src="${escapeHtml(f.previewUrl||'')}" title="악보 미리보기" loading="lazy" allow="fullscreen"></iframe></div>`;
+}'''
+          s=s[:a]+render_score+s[b:]
+
+          # CSS overrides: larger viewer + proper fullscreen layout.
+          css=r'''
+.scorePreview{height:78vh;min-height:560px}
+.scorePreview:fullscreen,.scorePreview:-webkit-full-screen{width:100vw;height:100vh;min-height:100vh;border:0;border-radius:0;background:#111}
+.scorePreview:fullscreen iframe,.scorePreview:-webkit-full-screen iframe{width:100%;height:100%}
+@media(max-width:520px){.scorePreview{height:70vh;min-height:480px}.scoreMeta{align-items:flex-start;flex-direction:column}.scoreActions{width:100%}.scoreActions .ghostBtn{flex:1;justify-content:center}}
+'''
+          if '.scorePreview:fullscreen' not in s:
+            s=s.replace('</style>',css+'</style>',1)
+
           p.write_text(s,encoding='utf-8')
-          assert "const APP_VERSION='v3.8';" in s
-          assert schedule in s and score in s
-          assert 'id="scoreUploadBtn"' in s
-          assert 'pending=loadQueue()' in s and 'hardConnectionDown' in s
+
+          # Preflight assertions
+          assert "const APP_VERSION='v3.9';" in s
+          assert 'function upcomingWorshipDates(' in s
+          assert "if(date>=today" in s
+          assert '>다운로드</a>' in s
+          assert 'openScoreFullscreen()' in s
+          assert '.scorePreview:fullscreen' in s
+          assert 'AKfycbwwYV6CBces0jCFTndl9EoKL_LU7P55TJ2eLrT1qCH0aL-XxZggaPClwz4FuZgZ3KulaQ' in s
+          assert 'AKfycbxyjSCotbCTOQ54H3IqutFZM0xQRF-92_bvJWMNcJKWdgqQjGgThiGFBtRmK1LlXObOdQ' in s
           PY
+
           python3 - <<'PY'
           from pathlib import Path
           import re
           s=Path('index.html').read_text(encoding='utf-8')
-          Path('/tmp/v38.js').write_text('\n'.join(re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>',s,re.S|re.I)),encoding='utf-8')
+          Path('/tmp/v39.js').write_text('\n'.join(re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>',s,re.S|re.I)),encoding='utf-8')
           PY
-          node --check /tmp/v38.js
-      - name: Commit live v3.8
+          node --check /tmp/v39.js
+
+      - name: Commit hotfix
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add index.html
-          git commit -m 'feat: restore isolated score upload (v3.8)'
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'fix: roll past worship dates forward and improve score viewer (v3.9)'
           git push
