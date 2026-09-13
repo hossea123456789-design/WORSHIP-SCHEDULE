@@ -1,0 +1,25 @@
+name: Diagnose Standalone Worship API
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-standalone-api.yml'
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Revision response
+        shell: bash
+        run: |
+          set +e
+          url='https://script.google.com/macros/s/AKfycbwwYV6CBces0jCFTndl9EoKL_LU7P55TJ2eLrT1qCH0aL-XxZggaPClwz4FuZgZ3KulaQ/exec?app=worship&action=revision&callback=probeCb'
+          curl -L -sS --max-time 25 -D /tmp/headers.txt "$url" -o /tmp/body.txt
+          code=$?
+          echo "CURL_EXIT=$code"
+          echo '--- HEADERS ---'
+          tail -n 30 /tmp/headers.txt || true
+          echo '--- BODY FIRST 1500 ---'
+          head -c 1500 /tmp/body.txt || true
+          echo
