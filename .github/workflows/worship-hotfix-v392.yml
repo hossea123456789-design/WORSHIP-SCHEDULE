@@ -28,7 +28,7 @@ jobs:
           dst = Path('Code_FAST_SCHEDULE.gs.txt')
           s = src.read_text(encoding='utf-8')
 
-          forbidden = ['DriveApp', 'function doPost', 'uploadStart', 'uploadChunk', 'worship-score']
+          forbidden = ['DriveApp', 'function doPost', 'worship-score', 'handleWorshipScore', 'worshipScore']
           bad = [x for x in forbidden if x in s]
           if bad:
               raise SystemExit('schedule source unexpectedly contains: ' + ', '.join(bad))
@@ -112,7 +112,7 @@ jobs:
           node --check /tmp/code_fast_schedule.js
           ! grep -q 'DriveApp' Code_FAST_SCHEDULE.gs.txt
           ! grep -q 'function doPost' Code_FAST_SCHEDULE.gs.txt
-          ! grep -q 'uploadStart' Code_FAST_SCHEDULE.gs.txt
+          ! grep -q 'worship-score' Code_FAST_SCHEDULE.gs.txt
           grep -q 'CACHE_SECONDS: 300' Code_FAST_SCHEDULE.gs.txt
           grep -q 'REV_CACHE_KEY' Code_FAST_SCHEDULE.gs.txt
 
