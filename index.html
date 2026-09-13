@@ -42,32 +42,31 @@ main{padding:15px}.panel{display:none}.panel.active{display:block}.sectionTitle{
 </head>
 <body>
 <div class="app">
-<header><div class="headerRow"><div class="brand"><div class="logo">WORSHIP</div><div><h1>주일 찬양팀 스케줄</h1><div class="sub">이번 주부터 월간 편성까지 한눈에</div></div></div><div class="todayPill" id="todayPill">-</div></div></header>
+<header><div class="headerRow"><div class="brand"><div class="logo">WORSHIP</div><div><h1>주일 찬양팀 스케줄</h1></div></div><div class="todayPill" id="todayPill">-</div></div></header>
 <main>
-<section id="tab-week" class="panel active"><div class="sectionTitle"><h2>이번 주 / 다음 주</h2><div class="hint">역할별 담당자를 빠르게 확인합니다.</div></div><div id="weekCards"></div></section>
-<section id="tab-month" class="panel"><div class="sectionTitle"><h2>월별 편성표</h2><div class="hint">찬양 일정만 열로 표시하고 실제 담당자만 셀 안에 표시합니다.</div></div><div class="card monthCard"><div class="monthToolbar"><div class="monthTitle" id="monthTitle"></div><div class="navGroup"><button class="squareBtn" id="prevMonth">‹</button><button class="squareBtn" id="monthEdit">편집</button><button class="squareBtn" id="nextMonth">›</button></div></div><div class="rotationBar"><div class="rotationText"><b id="rotationTitle"></b><span id="rotationDesc"></span></div><button class="primaryBtn" id="completeMonth">이 달 편성 완료</button></div><div class="matrixInfo" id="matrixInfo"></div><div id="matrixArea"></div></div></section>
-<section id="tab-prayer" class="panel"><div class="sectionTitle"><h2>기도 순서</h2><div class="hint">2026-09-13 박성인 집사님을 기준으로 매주 자동 순환합니다.</div></div><div id="prayerHero"></div><div class="card settingCard"><div class="cardHead"><h3>기도 안내 문구</h3><button class="primaryBtn" id="copyPrayer">복사</button></div><div class="cardBody"><div class="info" id="prayerCopyText" style="white-space:pre-line;user-select:text"></div></div></div><div class="card settingCard"><div class="cardHead"><h3>앞으로 9주</h3></div><div class="cardBody" id="prayerUpcoming"></div></div></section>
-<section id="tab-playlist" class="panel"><div class="sectionTitle"><h2>찬양 재생목록</h2><div class="hint">YouTube 재생목록을 브라우저가 직접 표시합니다.</div></div><div class="card playlistCard"><div class="info">Apps Script는 YouTube와 통신하지 않습니다. 재생목록을 갱신하면 아래 플레이어에도 그대로 반영됩니다.</div><div class="youtubeBox"><iframe id="youtubeFrame" title="주일 찬양 재생목록" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe></div><a class="ytLink" id="youtubeLink" target="_blank" rel="noopener">▶ YouTube에서 열기</a></div></section>
-<section id="tab-settings" class="panel"><div class="sectionTitle"><h2>설정</h2><div class="hint">찬양 날짜, 멤버, 역할, 기도 순서를 관리합니다.</div></div>
-<div class="card settingCard"><div class="cardHead"><h3>찬양 일정 날짜</h3></div><div class="cardBody"><div class="dateTabs"><button class="dateTab active" data-off="0">이번 달</button><button class="dateTab" data-off="1">다음 달</button></div><div id="dateSettingTitle" style="font-size:12px;font-weight:950;margin-bottom:8px"></div><div class="weekdayGrid"><div class="sun">일</div><div>월</div><div>화</div><div>수</div><div>목</div><div>금</div><div>토</div></div><div class="dateGrid" id="dateGrid"></div><div class="info" style="margin-top:9px">모든 주일은 기본 일정입니다. 평일 찬양은 날짜를 눌러 추가하고, 쉬는 주일은 선택을 해제하세요.</div></div></div>
+<section id="tab-week" class="panel active"><div class="sectionTitle"><h2>이번 주 / 다음 주</h2></div><div id="weekCards"></div></section>
+<section id="tab-month" class="panel"><div class="sectionTitle"><h2>월별 편성표</h2></div><div class="card monthCard"><div class="monthToolbar"><div class="monthTitle" id="monthTitle"></div><div class="navGroup"><button class="squareBtn" id="prevMonth">‹</button><button class="squareBtn" id="monthEdit">편집</button><button class="squareBtn" id="nextMonth">›</button></div></div><div class="rotationBar"><div class="rotationText"><b id="rotationTitle"></b><span id="rotationDesc"></span></div><button class="primaryBtn" id="completeMonth">이 달 편성 완료</button></div><div class="matrixInfo" id="matrixInfo"></div><div id="matrixArea"></div></div></section>
+<section id="tab-prayer" class="panel"><div class="sectionTitle"><h2>기도 순서</h2></div><div id="prayerHero"></div><div class="card settingCard"><div class="cardHead"><h3>기도 안내 문구</h3><button class="primaryBtn" id="copyPrayer">복사</button></div><div class="cardBody"><div class="info" id="prayerCopyText" style="white-space:pre-line;user-select:text"></div></div></div><div class="card settingCard"><div class="cardHead"><h3>앞으로 9주</h3></div><div class="cardBody" id="prayerUpcoming"></div></div></section>
+<section id="tab-playlist" class="panel"><div class="sectionTitle"><h2>찬양 재생목록</h2></div><div class="card playlistCard"><div class="youtubeBox"><iframe id="youtubeFrame" title="주일 찬양 재생목록" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe></div><a class="ytLink" id="youtubeLink" target="_blank" rel="noopener">▶ YouTube에서 열기</a></div></section>
+<section id="tab-settings" class="panel"><div class="sectionTitle"><h2>설정</h2></div>
+<div class="card settingCard"><div class="cardHead"><h3>찬양 일정 날짜</h3></div><div class="cardBody"><div class="dateTabs"><button class="dateTab active" data-off="0">이번 달</button><button class="dateTab" data-off="1">다음 달</button></div><div id="dateSettingTitle" style="font-size:12px;font-weight:950;margin-bottom:8px"></div><div class="weekdayGrid"><div class="sun">일</div><div>월</div><div>화</div><div>수</div><div>목</div><div>금</div><div>토</div></div><div class="dateGrid" id="dateGrid"></div></div></div>
 <div class="card settingCard"><div class="cardHead"><h3>멤버 관리</h3><button class="primaryBtn" id="addMember">+ 멤버</button></div><div class="cardBody" id="memberList"></div></div>
 <div class="card settingCard"><div class="cardHead"><h3>역할 / 세션 관리</h3><button class="primaryBtn" id="addRole">+ 역할</button></div><div class="cardBody"><div class="roleChips" id="roleList"></div></div></div>
 <div class="card settingCard"><div class="cardHead"><h3>기도 순서 관리</h3><button class="primaryBtn" id="editPrayerOrder">순서 편집</button></div><div class="cardBody"><div class="roleChips" id="prayerOrderList"></div></div></div>
-<div class="card settingCard"><div class="cardHead"><h3>연결 정보</h3></div><div class="cardBody"><div class="info" id="connectionInfo"></div><button class="ghostBtn" style="margin-top:8px" id="changeApi">Apps Script 주소 변경</button></div></div>
 </section>
 </main>
 <nav class="bottomNav"><button class="navBtn active" data-tab="week"><span>🏠</span>이번주</button><button class="navBtn" data-tab="month"><span>📅</span>월별</button><button class="navBtn" data-tab="prayer"><span>🙏</span>기도</button><button class="navBtn" data-tab="playlist"><span>▶️</span>찬양</button><button class="navBtn" data-tab="settings"><span>⚙️</span>설정</button></nav>
 </div>
 <div class="modalBackdrop" id="backdrop"></div><div class="sheetModal" id="modal"><div class="modalHead"><b id="modalTitle"></b><button class="closeBtn" id="closeModal">×</button></div><div class="modalBody" id="modalBody"></div></div>
-<div class="loading" id="loading"><div class="loadingCard"><div class="spinner"></div><b>찬양팀 스케줄 불러오는 중</b><p>공용 스프레드시트와 동기화합니다.</p></div></div>
+<div class="loading" id="loading"><div class="loadingCard"><div class="spinner"></div><b>찬양팀 스케줄 불러오는 중</b></div></div>
 <div class="toast" id="toast"></div><div class="sync" id="sync">저장 중…</div>
 <script>
 'use strict';
 
 const PLAYLIST_ID='PLDThR_8ShZAFTVEZgp2jtZaha8bThHZXB';
-const STORAGE_PREFIX='worship_fresh_v1_';
+const STORAGE_PREFIX='worship_stable_v2_';
 
-let API_URL='';
+const API_URL='https://script.google.com/macros/s/AKfycby9srJlhi9sWjpMxJSpyhWgkNRP6RwOyVDRyPRsUDDSceflQgnFP9A7yXaGIXGuj9Ad0Q/exec';
 let STATE=null;
 let viewMonth=null;
 let monthEdit=false;
@@ -91,44 +90,17 @@ function isActive(v){return v===true||String(v).toLowerCase()==='true'||String(v
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1600)}
 function roleClass(role){const k=String((role&&role.color_key)||'other');return ['leader','piano','bass','drum','singer'].includes(k)?k:'other'}
 
-function resolveApiUrl(){
-  const qs=new URLSearchParams(location.search);
-  const fromQuery=(qs.get('api')||'').trim();
-
-  if(fromQuery){
-    API_URL=fromQuery;
-    safeSet('api_url',API_URL);
-    qs.delete('api');
-    const clean=location.pathname+(qs.toString()?'?'+qs.toString():'')+location.hash;
-    history.replaceState(null,'',clean);
-  }else{
-    API_URL=(safeGet('api_url')||'').trim();
-  }
-}
-
-function validApiUrl(url){
-  return /^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec(?:\?.*)?$/.test(String(url||'').trim());
-}
-
-function showApiSetup(message){
+function showApiError(message){
   const loading=document.getElementById('loading');
   loading.classList.remove('hidden');
-  loading.innerHTML=`<div class="loadingCard"><b>Apps Script 연결이 필요합니다.</b><p>${escapeHtml(message||'배포된 Apps Script /exec 주소를 입력해주세요.')}</p><div class="setupBox"><label>Apps Script 웹 앱 /exec 주소</label><input id="apiSetupInput" placeholder="https://script.google.com/macros/s/.../exec" value="${escapeHtml(API_URL)}"><button class="primaryBtn" onclick="saveApiFromSetup()">연결하고 시작</button></div></div>`;
-}
-
-function saveApiFromSetup(){
-  const v=(document.getElementById('apiSetupInput').value||'').trim();
-  if(!validApiUrl(v)){showToast('정상적인 /exec 주소를 입력해주세요');return}
-  API_URL=v;safeSet('api_url',v);location.reload();
+  loading.innerHTML=`<div class="loadingCard"><b>데이터 연결 오류</b><p>${escapeHtml(message||'Apps Script 응답을 확인할 수 없습니다.')}</p><button class="primaryBtn" onclick="location.reload()">다시 시도</button></div>`;
 }
 
 function jsonp(action,params={},timeout=15000){
   return new Promise((resolve,reject)=>{
-    if(!validApiUrl(API_URL)){reject(new Error('Apps Script /exec 주소가 설정되지 않았습니다.'));return}
-
     const cb='__wcb_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2);
     const script=document.createElement('script');
-    const q=new URLSearchParams({action,callback:cb,_:String(Date.now()),...params});
+    const q=new URLSearchParams({app:'worship',action,callback:cb,_:String(Date.now()),...params});
     let done=false;
 
     const timer=setTimeout(()=>finish(new Error('서버 응답 시간이 초과되었습니다.')),timeout);
@@ -213,7 +185,7 @@ async function bootstrap(showLoading=true){
       document.getElementById('loading').classList.add('hidden');
       showToast('오프라인 캐시로 표시 중');
     }else{
-      showApiSetup(e&&e.message?e.message:String(e));
+      showApiError(e&&e.message?e.message:String(e));
     }
   }
 }
@@ -276,20 +248,35 @@ function applyOptimistic(m){
       source:'manual'
     });
   }
+
+  if(m.type==='memberSave' && p.memberId){
+    const member=STATE.members.find(x=>String(x.member_id)===String(p.memberId));
+    if(member)member.member_name=p.name;
+    STATE.memberRoles=STATE.memberRoles.filter(x=>String(x.member_id)!==String(p.memberId));
+    (p.roleIds||[]).forEach(roleId=>{
+      STATE.memberRoles.push({member_id:p.memberId,role_id:roleId,active:true});
+    });
+  }
 }
 
 async function flushQueue(){
-  if(flushing||!pending.length||!validApiUrl(API_URL))return;
+  if(flushing||!pending.length)return;
+
   flushing=true;
-  document.getElementById('sync').classList.add('show');
+  const sync=document.getElementById('sync');
+  sync.textContent='저장 중…';
+  sync.classList.add('show');
+
+  const m=pending[0];
+  m.attempts=Number(m.attempts||0)+1;
+  saveQueue();
 
   try{
-    const m=pending[0];
-    const res=await jsonp('mutate',{payload:JSON.stringify(m)},18000);
+    const res=await jsonp('mutate',{payload:JSON.stringify(m)},12000);
 
     if(res&&res.busy){
       flushing=false;
-      document.getElementById('sync').classList.remove('show');
+      sync.classList.remove('show');
       clearTimeout(retryTimer);
       retryTimer=setTimeout(flushQueue,Math.max(500,Number(res.retryAfterMs||700)));
       return;
@@ -301,18 +288,42 @@ async function flushQueue(){
     saveQueue();
     flushing=false;
 
+    if(m.type==='memberSave')showToast('멤버 저장 완료');
+    if(m.type==='rotationComplete')showToast('이 달 편성 기준 저장 완료');
+
     if(pending.length){
       flushQueue();
     }else{
-      document.getElementById('sync').classList.remove('show');
+      sync.classList.remove('show');
       await bootstrap(false);
     }
   }catch(e){
     flushing=false;
-    document.getElementById('sync').classList.remove('show');
-    clearTimeout(retryTimer);
-    retryTimer=setTimeout(flushQueue,1800);
-    showToast('저장 재시도 중');
+    sync.classList.remove('show');
+
+    if(Number(m.attempts||0)<3){
+      clearTimeout(retryTimer);
+      retryTimer=setTimeout(flushQueue,900*Number(m.attempts||1));
+      return;
+    }
+
+    // 무한 재시도/무한 "저장 중" 표시 금지.
+    pending.shift();
+    saveQueue();
+    sync.textContent='저장 실패';
+    sync.classList.add('show');
+    sync.style.color='#d92d20';
+    sync.style.borderColor='#fecaca';
+    sync.onclick=()=>{
+      sync.classList.remove('show');
+      sync.onclick=null;
+      queueMutation(m.type,m.payload);
+    };
+    showToast('저장 실패 · 저장 실패 표시를 누르면 재시도');
+    setTimeout(()=>{ if(sync.textContent==='저장 실패')sync.classList.remove('show'); },7000);
+
+    // 서버 기준 상태를 다시 불러와 실패한 낙관적 변경을 되돌립니다.
+    bootstrap(false);
   }
 }
 
@@ -478,10 +489,8 @@ function renderMonth(){
   document.getElementById('monthEdit').classList.toggle('on',monthEdit);
   document.getElementById('monthEdit').textContent=monthEdit?'편집중':'편집';
   document.getElementById('rotationTitle').textContent=base?`${base.replace('-','년 ')}월 로테이션 적용 중`:'로테이션 기준 없음';
-  document.getElementById('rotationDesc').textContent=base?'직접 수정한 셀은 예외로 유지됩니다.':'한 달 편성을 완료하면 이후 달에 자동 반복됩니다.';
-  document.getElementById('matrixInfo').textContent=monthEdit
-    ?'셀을 누르면 담당자를 바로 선택합니다. 단일 역할은 선택 즉시 저장, 싱어는 누를 때마다 즉시 추가/해제됩니다.'
-    :'편집 버튼을 누르면 월별 담당자를 수정할 수 있습니다.';
+  document.getElementById('rotationDesc').textContent='';
+  document.getElementById('matrixInfo').textContent='';
 
   if(!dates.length){
     document.getElementById('matrixArea').innerHTML='<div class="info" style="margin:15px">선택된 찬양 일정이 없습니다.</div>';
@@ -588,8 +597,6 @@ function renderSettings(){
   document.getElementById('prayerOrderList').innerHTML=STATE.prayerOrder
     .map((x,i)=>`<span class="roleChip">${i+1}. ${escapeHtml(x.display_name||((getMember(x.member_id)||{}).member_name)||'')}</span>`)
     .join('');
-
-  document.getElementById('connectionInfo').innerHTML=`현재 Apps Script API가 이 기기에 연결되어 있습니다.<br><span style="word-break:break-all">${escapeHtml(API_URL)}</span>`;
 }
 
 function renderDateSettings(){
@@ -809,7 +816,7 @@ document.getElementById('monthEdit').onclick=()=>{
 };
 document.getElementById('completeMonth').onclick=()=>{
   if(confirm('현재 월 편성을 로테이션 기준으로 저장할까요? 이후 달은 이 패턴을 자동으로 이어받습니다.')){
-    queueMutation('rotationComplete',{month:monthKey(viewMonth)});
+    showToast('편성 기준 저장 중'); queueMutation('rotationComplete',{month:monthKey(viewMonth)});
   }
 };
 document.getElementById('copyPrayer').onclick=async()=>{
@@ -826,9 +833,6 @@ document.getElementById('copyPrayer').onclick=async()=>{
 document.getElementById('addMember').onclick=()=>openMemberForm();
 document.getElementById('addRole').onclick=()=>openRoleForm();
 document.getElementById('editPrayerOrder').onclick=openPrayerOrder;
-document.getElementById('changeApi').onclick=()=>{
-  safeRemove('api_url');API_URL='';showApiSetup('새 Apps Script /exec 주소를 입력해주세요.');
-};
 
 document.querySelectorAll('.dateTab').forEach(b=>b.onclick=()=>{
   dateSettingOffset=Number(b.dataset.off);
@@ -844,7 +848,7 @@ document.querySelectorAll('.navBtn').forEach(b=>b.onclick=()=>{
 });
 
 async function pollRevision(){
-  if(!STATE||pending.length||!validApiUrl(API_URL))return;
+  if(!STATE||pending.length)return;
   try{
     const r=await jsonp('revision',{},8000);
     if(r&&r.ok&&Number(r.revision)!==Number(STATE.revision)){
@@ -852,8 +856,6 @@ async function pollRevision(){
     }
   }catch(e){}
 }
-
-resolveApiUrl();
 
 if(loadCachedState()){
   const today=new Date((STATE.serverToday||keyOf(new Date()))+'T00:00:00');
@@ -864,11 +866,7 @@ if(loadCachedState()){
 
 renderPlaylist();
 
-if(validApiUrl(API_URL)){
-  bootstrap(!STATE);
-}else{
-  showApiSetup('가장 쉬운 방법은 배포된 Apps Script /exec 주소를 한 번 여는 것입니다. 자동으로 이 페이지로 연결됩니다.');
-}
+bootstrap(!STATE);
 
 pollTimer=setInterval(pollRevision,25000);
 window.addEventListener('online',()=>{if(pending.length)flushQueue();else bootstrap(false)});
