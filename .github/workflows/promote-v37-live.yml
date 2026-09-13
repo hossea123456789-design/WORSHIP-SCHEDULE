@@ -1,0 +1,98 @@
+name: Promote Worship v3.7 Live
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/promote-v37-live.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  validate-and-promote:
+    runs-on: ubuntu-latest
+    env:
+      WORSHIP_API_URL: https://script.google.com/macros/s/AKfycbwwYV6CBces0jCFTndl9EoKL_LU7P55TJ2eLrT1qCH0aL-XxZggaPClwz4FuZgZ3KulaQ/exec
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Probe standalone revision API
+        shell: bash
+        run: |
+          set -euo pipefail
+          r="$(curl -LfsS --max-time 25 "${WORSHIP_API_URL}?app=worship&action=revision&callback=probeCb")"
+          printf '%s' "$r" | grep -F 'probeCb(' >/dev/null
+          printf '%s' "$r" | grep -F '"ok":true' >/dev/null
+          echo 'REVISION PROBE OK'
+
+      - name: Probe standalone bootstrap API
+        shell: bash
+        run: |
+          set -euo pipefail
+          r="$(curl -LfsS --max-time 40 "${WORSHIP_API_URL}?app=worship&action=bootstrap&callback=probeCb")"
+          printf '%s' "$r" | grep -F 'probeCb(' >/dev/null
+          printf '%s' "$r" | grep -F '"ok":true' >/dev/null
+          printf '%s' "$r" | grep -F '"roles"' >/dev/null
+          printf '%s' "$r" | grep -F '"members"' >/dev/null
+          echo 'BOOTSTRAP PROBE OK'
+
+      - name: Build live v3.7 from prepared frontend
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          src = Path('index_v37_ready.html')
+          if not src.exists():
+              raise SystemExit('index_v37_ready.html missing')
+          s = src.read_text(encoding='utf-8')
+          new_url = 'https://script.google.com/macros/s/AKfycbwwYV6CBces0jCFTndl9EoKL_LU7P55TJ2eLrT1qCH0aL-XxZggaPClwz4FuZgZ3KulaQ/exec'
+
+          s, n = re.subn(r"const\s+API_URL\s*=\s*['\"][^'\"]+['\"]\s*;", "const API_URL='" + new_url + "';", s, count=1)
+          if n != 1:
+              raise SystemExit(f'API_URL replacement count={n}')
+
+          s, n = re.subn(r"const\s+APP_VERSION\s*=\s*['\"][^'\"]+['\"]\s*;", "const APP_VERSION='v3.7';", s, count=1)
+          if n != 1:
+              raise SystemExit(f'APP_VERSION replacement count={n}')
+
+          Path('index.html').write_text(s, encoding='utf-8')
+          PY
+
+      - name: Static regression preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(grep -o "const APP_VERSION='v3.7';" index.html | wc -l)" -eq 1
+          test "$(grep -o 'AKfycbwwYV6CBces0jCFTndl9EoKL_LU7P55TJ2eLrT1qCH0aL-XxZggaPClwz4FuZgZ3KulaQ' index.html | wc -l)" -ge 1
+          test "$(grep -o 'id="scoreUploadBtn"' index.html | wc -l)" -eq 1
+          test "$(grep -o 'id="scoreProgress"' index.html | wc -l)" -eq 1
+          test "$(grep -o 'uploadStart' index.html | wc -l)" -ge 1
+          test "$(grep -o 'uploadChunk' index.html | wc -l)" -ge 1
+          test "$(grep -o 'API_SCRIPT_ERROR' index.html | wc -l)" -ge 1
+          test "$(grep -o 'API_RECOVERED' index.html | wc -l)" -ge 1
+          test "$(grep -o 'bottom:calc(72px + env(safe-area-inset-bottom))' index.html | wc -l)" -ge 1
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('index.html').read_text(encoding='utf-8')
+          a=s.rfind('<script>'); b=s.rfind('</script>')
+          if a<0 or b<=a: raise SystemExit('inline script missing')
+          Path('/tmp/worship-v37.js').write_text(s[a+8:b],encoding='utf-8')
+          PY
+          node --check /tmp/worship-v37.js
+          echo 'V3.7 STATIC PREFLIGHT OK'
+
+      - name: Commit live v3.7
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          if git diff --cached --quiet; then
+            echo 'No index change'
+            exit 0
+          fi
+          git commit -m "feat: promote standalone worship backend and score upload (v3.7)"
+          git push
