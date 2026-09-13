@@ -79,7 +79,7 @@ main{padding:15px 15px 36px}.panel{display:none}.panel.active{display:block}.sec
 
 const PLAYLIST_ID='PLDThR_8ShZAFTVEZgp2jtZaha8bThHZXB';
 const STORAGE_PREFIX='worship_fast_v3_';
-const APP_VERSION='v3.9';
+const APP_VERSION='v3.9.1';
 const BOOTSTRAP_TIMEOUT_MS=25000;
 const MUTATE_TIMEOUT_MS=25000;
 
@@ -558,8 +558,15 @@ function prayerNameForSunday(d){
 }
 
 
+function currentTodayKey(){
+  const local=keyOf(new Date());
+  const server=String((STATE&&STATE.serverToday)||'');
+  if(/^\d{4}-\d{2}-\d{2}$/.test(server)&&server>local)return server;
+  return local;
+}
+
 function upcomingWorshipDates(count=2){
-  const today=STATE.serverToday||keyOf(new Date());
+  const today=currentTodayKey();
   const start=new Date(today+'T00:00:00');
   const out=[];
   let y=start.getFullYear(),m=start.getMonth();
@@ -587,7 +594,7 @@ function renderAll(){
 }
 
 function renderHeader(){
-  const d=new Date((STATE.serverToday||keyOf(new Date()))+'T00:00:00');
+  const d=new Date(currentTodayKey()+'T00:00:00');
   document.getElementById('todayPill').textContent=`${d.getMonth()+1}.${d.getDate()} ${['일','월','화','수','목','금','토'][d.getDay()]}`;
 }
 
