@@ -35,8 +35,11 @@ main{padding:15px}.panel{display:none}.panel.active{display:block}.sectionTitle{
 .playlistCard{padding:13px}.youtubeBox{position:relative;width:100%;aspect-ratio:16/9;border-radius:15px;overflow:hidden;background:#111;margin:10px 0}.youtubeBox iframe{position:absolute;inset:0;width:100%;height:100%;border:0}.ytLink{display:inline-flex;text-decoration:none;background:#ff0000;color:#fff;border-radius:10px;padding:9px 11px;font-size:10px;font-weight:950}
 .bottomNav{position:fixed;left:50%;bottom:0;transform:translateX(-50%);z-index:50;width:min(900px,100%);display:grid;grid-template-columns:repeat(5,1fr);background:rgba(255,255,255,.97);backdrop-filter:blur(18px);border-top:1px solid var(--line);padding:6px 5px calc(6px + env(safe-area-inset-bottom))}.navBtn{border:0;background:transparent;border-radius:12px;padding:7px 2px;color:#989eaa;font-size:8px;font-weight:900}.navBtn span{display:block;font-size:17px;margin-bottom:2px}.navBtn.active{background:var(--accentSoft);color:var(--accent)}
 .modalBackdrop{position:fixed;inset:0;z-index:80;background:rgba(15,23,42,.45);display:none}.modalBackdrop.show{display:block}.sheetModal{position:fixed;left:50%;bottom:0;z-index:90;width:min(900px,100%);max-height:80vh;overflow:auto;background:#fff;border-radius:22px 22px 0 0;transform:translate(-50%,100%);transition:.2s;box-shadow:0 -20px 60px rgba(0,0,0,.18);padding-bottom:env(safe-area-inset-bottom)}.sheetModal.show{transform:translate(-50%,0)}.modalHead{display:flex;justify-content:space-between;align-items:center;padding:13px 15px;border-bottom:1px solid var(--line);position:sticky;top:0;background:#fff;z-index:2}.modalHead b{font-size:13px}.closeBtn{width:31px;height:31px;border:0;background:#f2f4f8;border-radius:9px;font-weight:950}.modalBody{padding:12px 14px}.pickGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.pickBtn{border:1px solid var(--line);background:#fff;border-radius:11px;padding:11px 8px;font-size:11px;font-weight:900}.pickBtn.selected{background:#171a2b;color:#fff;border-color:#171a2b}.formField{margin-bottom:11px}.formField label{display:block;font-size:10px;font-weight:900;margin-bottom:5px}.formField input,.formField select{width:100%;border:1px solid #d9dde6;border-radius:10px;padding:9px 10px}.checkPill input{display:none}.checkPill span{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:6px 8px;font-size:9px;font-weight:900}.checkPill input:checked+span{background:#171a2b;color:#fff;border-color:#171a2b}.modalActions{display:flex;justify-content:flex-end;gap:6px;margin-top:12px}
-.loading{position:fixed;inset:0;z-index:100;background:var(--bg);display:grid;place-items:center;padding:20px}.loading.hidden{display:none}.loadingCard{text-align:center;max-width:460px}.spinner{width:35px;height:35px;margin:0 auto 13px;border:4px solid #e5e7eb;border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}.loadingCard b{font-size:13px}.loadingCard p{font-size:10px;color:var(--muted);line-height:1.6}.setupBox{margin-top:14px;text-align:left;background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px}.setupBox label{display:block;font-size:9px;font-weight:900;margin-bottom:5px}.setupBox input{width:100%;border:1px solid #d9dde6;border-radius:9px;padding:9px;font-size:9px}.setupBox button{width:100%;margin-top:7px}
-.toast{position:fixed;left:50%;bottom:95px;z-index:110;transform:translate(-50%,15px);opacity:0;background:#171a2b;color:#fff;border-radius:999px;padding:9px 12px;font-size:10px;font-weight:900;transition:.2s;white-space:nowrap;pointer-events:none}.toast.show{opacity:1;transform:translate(-50%,0)}.sync{position:fixed;right:12px;bottom:93px;z-index:60;background:#fff;border:1px solid var(--line);border-radius:999px;padding:6px 8px;font-size:8px;color:var(--muted);box-shadow:0 4px 14px rgba(15,23,42,.08);display:none}.sync.show{display:block}
+.processStatus{position:fixed;left:50%;bottom:88px;z-index:115;transform:translateX(-50%);display:flex;align-items:center;gap:6px;min-height:30px;padding:7px 11px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.97);box-shadow:0 6px 18px rgba(15,23,42,.10);font-size:9px;font-weight:900;color:#596174;white-space:nowrap}.processStatus .dot{width:7px;height:7px;border-radius:50%;background:#98a2b3}.processStatus.working .dot{background:#5d63e6;animation:pulse 1s ease-in-out infinite}.processStatus.ok .dot{background:#16a36a}.processStatus.error{color:#b42318;border-color:#fecaca;background:#fff7f7}.processStatus.error .dot{background:#d92d20}.processStatus.offline{color:#9a6700;border-color:#fde68a;background:#fffbeb}.processStatus.offline .dot{background:#f59e0b}@keyframes pulse{0%,100%{opacity:.35}50%{opacity:1}}
+.errorBanner{display:none;margin:0 0 12px;padding:11px 12px;border:1px solid #fecaca;border-radius:13px;background:#fff7f7;color:#9f1c15;font-size:10px;line-height:1.55}.errorBanner.show{display:flex;align-items:center;justify-content:space-between;gap:10px}.errorBanner button{flex:0 0 auto}
+.skeleton{position:relative;overflow:hidden;background:#eef0f4!important;color:transparent!important;border-color:transparent!important}.skeleton:after{content:"";position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,rgba(255,255,255,.65),transparent);animation:shimmer 1.3s infinite}@keyframes shimmer{100%{transform:translateX(100%)}}
+.logMeta{font-size:9px;color:var(--muted);line-height:1.6}.logActions{display:flex;gap:7px;margin-top:10px}.logActions button{flex:1}
+.toast{position:fixed;left:50%;bottom:95px;z-index:110;transform:translate(-50%,15px);opacity:0;background:#171a2b;color:#fff;border-radius:999px;padding:9px 12px;font-size:10px;font-weight:900;transition:.2s;white-space:nowrap;pointer-events:none}.toast.show{opacity:1;transform:translate(-50%,0)}.sync{position:fixed;right:12px;bottom:93px;z-index:60;background:#fff;border:1px solid var(--line);border-radius:999px;padding:6px 8px;font-size:8px;color:var(--muted);box-shadow:0 4px 14px rgba(15,23,42,.08);display:none}
 @media(min-width:640px){main{padding:19px}.roleCol{min-width:135px;max-width:135px}.weekRole{grid-template-columns:150px 1fr}.pickGrid{grid-template-columns:repeat(3,1fr)}}
 </style>
 </head>
@@ -44,7 +47,11 @@ main{padding:15px}.panel{display:none}.panel.active{display:block}.sectionTitle{
 <div class="app">
 <header><div class="headerRow"><div class="brand"><div class="logo">WORSHIP</div><div><h1>주일 찬양팀 스케줄</h1></div></div><div class="todayPill" id="todayPill">-</div></div></header>
 <main>
-<section id="tab-week" class="panel active"><div class="sectionTitle"><h2>이번 주 / 다음 주</h2></div><div id="weekCards"></div></section>
+<div class="errorBanner" id="errorBanner"><span id="errorBannerText"></span><button class="ghostBtn" id="retryConnection">다시 시도</button></div>
+<section id="tab-week" class="panel active"><div class="sectionTitle"><h2>이번 주 / 다음 주</h2></div><div id="weekCards">
+<div class="card weekCard"><div class="weekHead"><div class="weekTitle">이번 주<span class="weekBadge">THIS WEEK</span></div><div class="dateLine">일정을 불러오는 중</div></div><div class="weekRoles"><div class="weekRole"><div class="roleLabel"><span class="roleDot"></span><span class="skeleton" style="width:58px;height:15px;border-radius:7px"></span></div><div class="people"><span class="person skeleton" style="width:72px"></span></div></div><div class="weekRole"><div class="roleLabel"><span class="roleDot"></span><span class="skeleton" style="width:72px;height:15px;border-radius:7px"></span></div><div class="people"><span class="person skeleton" style="width:84px"></span></div></div><div class="weekRole"><div class="roleLabel"><span class="roleDot"></span><span class="skeleton" style="width:52px;height:15px;border-radius:7px"></span></div><div class="people"><span class="person skeleton" style="width:68px"></span></div></div></div></div>
+<div class="card weekCard"><div class="weekHead"><div class="weekTitle">다음 주<span class="weekBadge">NEXT WEEK</span></div><div class="dateLine">일정을 불러오는 중</div></div><div class="weekRoles"><div class="weekRole"><div class="roleLabel"><span class="roleDot"></span><span class="skeleton" style="width:58px;height:15px;border-radius:7px"></span></div><div class="people"><span class="person skeleton" style="width:72px"></span></div></div><div class="weekRole"><div class="roleLabel"><span class="roleDot"></span><span class="skeleton" style="width:72px;height:15px;border-radius:7px"></span></div><div class="people"><span class="person skeleton" style="width:84px"></span></div></div></div></div>
+</div></section>
 <section id="tab-month" class="panel"><div class="sectionTitle"><h2>월별 편성표</h2></div><div class="card monthCard"><div class="monthToolbar"><div class="monthTitle" id="monthTitle"></div><div class="navGroup"><button class="squareBtn" id="prevMonth">‹</button><button class="squareBtn" id="monthEdit">편집</button><button class="squareBtn" id="nextMonth">›</button></div></div><div class="rotationBar"><div class="rotationText"><b id="rotationTitle"></b><span id="rotationDesc"></span></div><button class="primaryBtn" id="completeMonth">이 달 편성 완료</button></div><div class="matrixInfo" id="matrixInfo"></div><div id="matrixArea"></div></div></section>
 <section id="tab-prayer" class="panel"><div class="sectionTitle"><h2>기도 순서</h2></div><div id="prayerHero"></div><div class="card settingCard"><div class="cardHead"><h3>기도 안내 문구</h3><button class="primaryBtn" id="copyPrayer">복사</button></div><div class="cardBody"><div class="info" id="prayerCopyText" style="white-space:pre-line;user-select:text"></div></div></div><div class="card settingCard"><div class="cardHead"><h3>앞으로 9주</h3></div><div class="cardBody" id="prayerUpcoming"></div></div></section>
 <section id="tab-playlist" class="panel"><div class="sectionTitle"><h2>찬양 재생목록</h2></div><div class="card playlistCard"><div class="youtubeBox"><iframe id="youtubeFrame" title="주일 찬양 재생목록" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe></div><a class="ytLink" id="youtubeLink" target="_blank" rel="noopener">▶ YouTube에서 열기</a></div></section>
@@ -53,18 +60,19 @@ main{padding:15px}.panel{display:none}.panel.active{display:block}.sectionTitle{
 <div class="card settingCard"><div class="cardHead"><h3>멤버 관리</h3><button class="primaryBtn" id="addMember">+ 멤버</button></div><div class="cardBody" id="memberList"></div></div>
 <div class="card settingCard"><div class="cardHead"><h3>역할 / 세션 관리</h3><button class="primaryBtn" id="addRole">+ 역할</button></div><div class="cardBody"><div class="roleChips" id="roleList"></div></div></div>
 <div class="card settingCard"><div class="cardHead"><h3>기도 순서 관리</h3><button class="primaryBtn" id="editPrayerOrder">순서 편집</button></div><div class="cardBody"><div class="roleChips" id="prayerOrderList"></div></div></div>
+<div class="card settingCard"><div class="cardHead"><h3>진단 로그</h3><button class="primaryBtn" id="copyLog">로그 복사</button></div><div class="cardBody"><div class="logMeta" id="logMeta">최근 동작 기록을 저장합니다.</div><div class="logActions"><button class="ghostBtn" id="clearLog">로그 비우기</button></div></div></div>
 </section>
 </main>
 <nav class="bottomNav"><button class="navBtn active" data-tab="week"><span>🏠</span>이번주</button><button class="navBtn" data-tab="month"><span>📅</span>월별</button><button class="navBtn" data-tab="prayer"><span>🙏</span>기도</button><button class="navBtn" data-tab="playlist"><span>▶️</span>찬양</button><button class="navBtn" data-tab="settings"><span>⚙️</span>설정</button></nav>
 </div>
 <div class="modalBackdrop" id="backdrop"></div><div class="sheetModal" id="modal"><div class="modalHead"><b id="modalTitle"></b><button class="closeBtn" id="closeModal">×</button></div><div class="modalBody" id="modalBody"></div></div>
-<div class="loading" id="loading"><div class="loadingCard"><div class="spinner"></div><b>찬양팀 스케줄 불러오는 중</b></div></div>
-<div class="toast" id="toast"></div><div class="sync" id="sync">저장 중…</div>
+<div class="toast" id="toast"></div><div class="processStatus working" id="processStatus"><span class="dot"></span><span id="processStatusText">연결 중…</span></div>
 <script>
 'use strict';
 
 const PLAYLIST_ID='PLDThR_8ShZAFTVEZgp2jtZaha8bThHZXB';
-const STORAGE_PREFIX='worship_stable_v2_';
+const STORAGE_PREFIX='worship_fast_v3_';
+const APP_VERSION='v3.0';
 
 const API_URL='https://script.google.com/macros/s/AKfycby9srJlhi9sWjpMxJSpyhWgkNRP6RwOyVDRyPRsUDDSceflQgnFP9A7yXaGIXGuj9Ad0Q/exec';
 let STATE=null;
@@ -90,13 +98,52 @@ function isActive(v){return v===true||String(v).toLowerCase()==='true'||String(v
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1600)}
 function roleClass(role){const k=String((role&&role.color_key)||'other');return ['leader','piano','bass','drum','singer'].includes(k)?k:'other'}
 
-function showApiError(message){
-  const loading=document.getElementById('loading');
-  loading.classList.remove('hidden');
-  loading.innerHTML=`<div class="loadingCard"><b>데이터 연결 오류</b><p>${escapeHtml(message||'Apps Script 응답을 확인할 수 없습니다.')}</p><button class="primaryBtn" onclick="location.reload()">다시 시도</button></div>`;
+const LOG_LIMIT=200;
+let processStatus='연결 중…';
+function readLogs(){try{const x=JSON.parse(safeGet('diagnostic_log')||'[]');return Array.isArray(x)?x:[]}catch(e){return[]}}
+function writeLogs(a){safeSet('diagnostic_log',JSON.stringify(a.slice(-LOG_LIMIT)))}
+function logEvent(level,event,detail){
+  const a=readLogs();
+  a.push({time:new Date().toISOString(),level:String(level||'INFO'),event:String(event||''),detail:detail==null?'':String(detail)});
+  writeLogs(a);
+  updateLogMeta();
 }
+function setProcess(text,type='ok',detail=''){
+  processStatus=text;
+  const el=document.getElementById('processStatus');
+  const txt=document.getElementById('processStatusText');
+  if(el&&txt){el.className='processStatus '+type;txt.textContent=text;}
+  if(detail)logEvent(type==='error'?'ERROR':'INFO','STATUS',text+' | '+detail);
+}
+function showConnectionError(message){
+  const b=document.getElementById('errorBanner'),t=document.getElementById('errorBannerText');
+  if(b&&t){t.textContent=message||'데이터 연결 오류';b.classList.add('show');}
+  setProcess('연결 오류','error',message||'');
+}
+function clearConnectionError(){const b=document.getElementById('errorBanner');if(b)b.classList.remove('show')}
+function updateLogMeta(){
+  const el=document.getElementById('logMeta');if(!el)return;
+  const a=readLogs();const lastErr=[...a].reverse().find(x=>x.level==='ERROR');
+  el.textContent=`앱 ${APP_VERSION} · 로그 ${a.length}건 · 상태: ${processStatus}`+(lastErr?` · 마지막 오류: ${lastErr.event}`:'');
+}
+function buildLogText(){
+  const a=readLogs();
+  const head=[`WORSHIP APP LOG ${APP_VERSION}`,`copied_at=${new Date().toISOString()}`,`online=${navigator.onLine}`,`url=${location.href}`,`userAgent=${navigator.userAgent}`,`pending=${pending.length}`,`status=${processStatus}`,'---'];
+  return head.concat(a.map(x=>`${x.time} [${x.level}] ${x.event}${x.detail?' | '+x.detail:''}`)).join('\n');
+}
+async function copyLogs(){
+  const text=buildLogText();
+  try{await navigator.clipboard.writeText(text)}catch(e){const ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove()}
+  showToast('로그를 복사했습니다');
+  logEvent('INFO','LOG_COPIED',`count=${readLogs().length}`);
+}
+function clearLogs(){writeLogs([]);updateLogMeta();showToast('로그를 비웠습니다')}
+
+function showApiError(message){showConnectionError(message||'Apps Script 응답을 확인할 수 없습니다.')}
 
 function jsonp(action,params={},timeout=15000){
+  const started=performance.now();
+  logEvent('INFO','API_START',`action=${action}`);
   return new Promise((resolve,reject)=>{
     const cb='__wcb_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2);
     const script=document.createElement('script');
@@ -109,7 +156,7 @@ function jsonp(action,params={},timeout=15000){
       if(done)return;done=true;clearTimeout(timer);
       try{delete window[cb]}catch(e){}
       script.remove();
-      err?reject(err):resolve(data);
+      if(err){logEvent('ERROR','API_FAIL',`action=${action} ms=${Math.round(performance.now()-started)} msg=${err.message||err}`);reject(err)}else{logEvent('INFO','API_OK',`action=${action} ms=${Math.round(performance.now()-started)}`);resolve(data)}
     }
 
     window[cb]=data=>finish(null,data);
@@ -160,12 +207,13 @@ function holidayMap(){
 }
 
 async function bootstrap(showLoading=true){
-  if(showLoading&&!STATE){
-    document.getElementById('loading').classList.remove('hidden');
-  }
+  const started=performance.now();
+  setProcess(STATE?'동기화 중…':'연결 중…','working');
+  clearConnectionError();
+  logEvent('INFO','BOOTSTRAP_START',`cached=${!!STATE}`);
 
   try{
-    const res=await jsonp('bootstrap',{},18000);
+    const res=await jsonp('bootstrap',{},15000);
     if(!res||!res.ok)throw new Error((res&&res.error)||'초기 데이터를 불러오지 못했습니다.');
 
     STATE=res.data;
@@ -176,14 +224,16 @@ async function bootstrap(showLoading=true){
     if(!viewMonth)viewMonth=new Date(today.getFullYear(),today.getMonth(),1);
 
     renderAll();
-    document.getElementById('loading').classList.add('hidden');
+    setProcess('연결 완료','ok');
+    logEvent('INFO','BOOTSTRAP_OK',`ms=${Math.round(performance.now()-started)} revision=${STATE.revision}`);
 
     if(pending.length)flushQueue();
   }catch(e){
+    logEvent('ERROR','BOOTSTRAP_FAIL',e&&e.message?e.message:String(e));
     if(STATE){
       renderAll();
-      document.getElementById('loading').classList.add('hidden');
-      showToast('오프라인 캐시로 표시 중');
+      setProcess(navigator.onLine?'동기화 실패 · 캐시 사용':'오프라인 · 캐시 사용',navigator.onLine?'error':'offline');
+      showToast('기존 데이터로 표시 중');
     }else{
       showApiError(e&&e.message?e.message:String(e));
     }
@@ -200,6 +250,8 @@ function queueMutation(type,payload){
   };
   pending.push(m);
   saveQueue();
+  logEvent('INFO','QUEUE_ADD',`type=${type} pending=${pending.length}`);
+  setProcess('저장 대기…','working');
   applyOptimistic(m);
   renderAll();
   flushQueue();
@@ -263,20 +315,19 @@ async function flushQueue(){
   if(flushing||!pending.length)return;
 
   flushing=true;
-  const sync=document.getElementById('sync');
-  sync.textContent='저장 중…';
-  sync.classList.add('show');
-
   const m=pending[0];
   m.attempts=Number(m.attempts||0)+1;
   saveQueue();
+  setProcess('저장 중…','working');
+  logEvent('INFO','SAVE_START',`type=${m.type} attempt=${m.attempts} pending=${pending.length}`);
 
   try{
     const res=await jsonp('mutate',{payload:JSON.stringify(m)},12000);
 
     if(res&&res.busy){
       flushing=false;
-      sync.classList.remove('show');
+      setProcess('저장 대기…','working');
+      logEvent('INFO','SAVE_BUSY',`type=${m.type}`);
       clearTimeout(retryTimer);
       retryTimer=setTimeout(flushQueue,Math.max(500,Number(res.retryAfterMs||700)));
       return;
@@ -287,42 +338,40 @@ async function flushQueue(){
     pending.shift();
     saveQueue();
     flushing=false;
+    if(STATE&&res.revision!=null){STATE.revision=res.revision;cacheState();}
+    logEvent('INFO','SAVE_OK',`type=${m.type} revision=${res.revision} remaining=${pending.length}`);
 
     if(m.type==='memberSave')showToast('멤버 저장 완료');
     if(m.type==='rotationComplete')showToast('이 달 편성 기준 저장 완료');
 
     if(pending.length){
       flushQueue();
-    }else{
-      sync.classList.remove('show');
-      await bootstrap(false);
+      return;
+    }
+
+    setProcess('연결 완료','ok');
+
+    // 서버 생성 ID/구조 변화 또는 로테이션 스냅샷은 백그라운드에서만 재동기화합니다.
+    if((m.type==='memberSave'&&!m.payload.memberId)||['memberDelete','roleSave','roleDelete','prayerOrderSet','rotationComplete'].includes(m.type)){
+      bootstrap(false);
     }
   }catch(e){
     flushing=false;
-    sync.classList.remove('show');
+    logEvent('ERROR','SAVE_FAIL',`type=${m.type} attempt=${m.attempts} msg=${e&&e.message?e.message:e}`);
 
     if(Number(m.attempts||0)<3){
+      setProcess('저장 재시도…','working');
       clearTimeout(retryTimer);
       retryTimer=setTimeout(flushQueue,900*Number(m.attempts||1));
       return;
     }
 
-    // 무한 재시도/무한 "저장 중" 표시 금지.
     pending.shift();
     saveQueue();
-    sync.textContent='저장 실패';
-    sync.classList.add('show');
-    sync.style.color='#d92d20';
-    sync.style.borderColor='#fecaca';
-    sync.onclick=()=>{
-      sync.classList.remove('show');
-      sync.onclick=null;
-      queueMutation(m.type,m.payload);
-    };
-    showToast('저장 실패 · 저장 실패 표시를 누르면 재시도');
-    setTimeout(()=>{ if(sync.textContent==='저장 실패')sync.classList.remove('show'); },7000);
+    setProcess('저장 실패','error',e&&e.message?e.message:String(e));
+    showToast('저장 실패 · 설정에서 로그를 복사해 주세요');
 
-    // 서버 기준 상태를 다시 불러와 실패한 낙관적 변경을 되돌립니다.
+    // 실패한 낙관 변경을 서버/캐시 기준으로 되돌림. UI는 가리지 않습니다.
     bootstrap(false);
   }
 }
@@ -574,6 +623,7 @@ function renderPlaylist(){
 
 function renderSettings(){
   renderDateSettings();
+  updateLogMeta();
 
   document.getElementById('memberList').innerHTML=STATE.members.map(m=>{
     const roles=STATE.memberRoles
@@ -833,6 +883,9 @@ document.getElementById('copyPrayer').onclick=async()=>{
 document.getElementById('addMember').onclick=()=>openMemberForm();
 document.getElementById('addRole').onclick=()=>openRoleForm();
 document.getElementById('editPrayerOrder').onclick=openPrayerOrder;
+document.getElementById('copyLog').onclick=copyLogs;
+document.getElementById('clearLog').onclick=clearLogs;
+document.getElementById('retryConnection').onclick=()=>bootstrap(false);
 
 document.querySelectorAll('.dateTab').forEach(b=>b.onclick=()=>{
   dateSettingOffset=Number(b.dataset.off);
@@ -852,24 +905,34 @@ async function pollRevision(){
   try{
     const r=await jsonp('revision',{},8000);
     if(r&&r.ok&&Number(r.revision)!==Number(STATE.revision)){
+      logEvent('INFO','REMOTE_CHANGE',`local=${STATE.revision} remote=${r.revision}`);
       await bootstrap(false);
     }
-  }catch(e){}
+  }catch(e){logEvent('ERROR','REVISION_FAIL',e&&e.message?e.message:String(e))}
 }
+
+logEvent('INFO','APP_START',`version=${APP_VERSION}`);
+const localNow=new Date();
+document.getElementById('todayPill').textContent=`${localNow.getMonth()+1}.${localNow.getDate()} ${['일','월','화','수','목','금','토'][localNow.getDay()]}`;
 
 if(loadCachedState()){
   const today=new Date((STATE.serverToday||keyOf(new Date()))+'T00:00:00');
   viewMonth=new Date(today.getFullYear(),today.getMonth(),1);
+  pending.forEach(applyOptimistic);
   renderAll();
-  document.getElementById('loading').classList.add('hidden');
+  setProcess('동기화 중…','working');
+  logEvent('INFO','CACHE_RENDERED',`revision=${STATE.revision}`);
+}else{
+  viewMonth=new Date(localNow.getFullYear(),localNow.getMonth(),1);
+  setProcess('연결 중…','working');
 }
 
 renderPlaylist();
-
-bootstrap(!STATE);
+bootstrap(false);
 
 pollTimer=setInterval(pollRevision,25000);
-window.addEventListener('online',()=>{if(pending.length)flushQueue();else bootstrap(false)});
+window.addEventListener('online',()=>{logEvent('INFO','NETWORK','online');if(pending.length)flushQueue();else bootstrap(false)});
+window.addEventListener('offline',()=>{logEvent('INFO','NETWORK','offline');setProcess('오프라인','offline')});
 </script>
 </body>
 </html>
