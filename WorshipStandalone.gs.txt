@@ -13,7 +13,7 @@ const WORSHIP_API = Object.freeze({
   CACHE_SECONDS: 20,
   LOG_KEEP: 1500,
   SHEETS: Object.freeze({
-    CONFIG: 'APP_CONFIG',
+    CONFIG: 'CONFIG',
     ROLES: 'ROLES',
     MEMBERS: 'MEMBERS',
     MEMBER_ROLES: 'MEMBER_ROLES',
@@ -25,13 +25,13 @@ const WORSHIP_API = Object.freeze({
     MUTATION_LOG: 'MUTATION_LOG'
   }),
   HEADERS: Object.freeze({
-    APP_CONFIG: ['key', 'value', 'description', 'updated_at'],
-    ROLES: ['role_id', 'role_name', 'display_order', 'color_key', 'allow_multiple', 'active', 'updated_at'],
-    MEMBERS: ['member_id', 'member_name', 'display_order', 'active', 'updated_at'],
-    MEMBER_ROLES: ['member_id', 'role_id', 'active', 'updated_at'],
+    CONFIG: ['key', 'value', 'description'],
+    ROLES: ['role_id', 'role_name', 'display_order', 'color_key', 'allow_multiple', 'active'],
+    MEMBERS: ['member_id', 'member_name', 'display_order', 'active'],
+    MEMBER_ROLES: ['member_id', 'role_id', 'active'],
     EVENTS: ['event_date', 'event_type', 'title', 'active', 'source', 'updated_at'],
     ASSIGNMENTS: ['assignment_id', 'event_date', 'role_id', 'member_id', 'sort_order', 'source', 'active', 'updated_at'],
-    PRAYER_ORDER: ['position', 'member_id', 'display_name', 'active', 'updated_at'],
+    PRAYER_ORDER: ['position', 'member_id', 'display_name', 'active'],
     ROTATION_BASE: ['base_month', 'event_index', 'role_id', 'member_id', 'sort_order', 'active', 'updated_at'],
     HOLIDAYS: ['holiday_date', 'holiday_name', 'holiday_type', 'source'],
     MUTATION_LOG: ['mutation_id', 'client_id', 'mutation_type', 'applied_at']
@@ -229,7 +229,7 @@ function worshipEffectiveMemberIds_(date,roleId,month,monthDates,assignments,rot
 
 function worshipMutationAlreadyApplied_(ss,mutationId) { const sheet=ss.getSheetByName(WORSHIP_API.SHEETS.MUTATION_LOG); if(!sheet||sheet.getLastRow()<2)return false; const count=Math.min(Math.max(sheet.getLastRow()-1,0),WORSHIP_API.LOG_KEEP); if(!count)return false; const start=sheet.getLastRow()-count+1, values=sheet.getRange(start,1,count,1).getDisplayValues(); return values.some(r=>String(r[0])===mutationId); }
 function worshipAppendMutationLog_(ss,mutationId,clientId,type,now) { const sheet=ss.getSheetByName(WORSHIP_API.SHEETS.MUTATION_LOG); if(!sheet)throw new Error('필수 시트가 없습니다: '+WORSHIP_API.SHEETS.MUTATION_LOG); sheet.appendRow([mutationId,clientId,type,now]); const rows=Math.max(sheet.getLastRow()-1,0); if(rows>WORSHIP_API.LOG_KEEP)sheet.deleteRows(2,rows-WORSHIP_API.LOG_KEEP); }
-function worshipIncrementRevision_(ss,now) { const sheet=ss.getSheetByName(WORSHIP_API.SHEETS.CONFIG); if(!sheet)throw new Error('필수 시트가 없습니다: '+WORSHIP_API.SHEETS.CONFIG); const last=sheet.getLastRow(); if(last>=2){const values=sheet.getRange(2,1,last-1,2).getValues();for(let i=0;i<values.length;i++){if(String(values[i][0])==='STATE_REVISION'){const next=Number(values[i][1]||0)+1;sheet.getRange(i+2,2).setValue(String(next));sheet.getRange(i+2,4).setValue(now);return next;}}} sheet.appendRow(['STATE_REVISION','1','공용 데이터 변경 버전',now]); return 1; }
+function worshipIncrementRevision_(ss,now) { const sheet=ss.getSheetByName(WORSHIP_API.SHEETS.CONFIG); if(!sheet)throw new Error('필수 시트가 없습니다: '+WORSHIP_API.SHEETS.CONFIG); const last=sheet.getLastRow(); if(last>=2){const values=sheet.getRange(2,1,last-1,2).getValues();for(let i=0;i<values.length;i++){if(String(values[i][0])==='STATE_REVISION'){const next=Number(values[i][1]||0)+1;sheet.getRange(i+2,2).setValue(String(next));return next;}}} sheet.appendRow(['STATE_REVISION','1','공용 데이터 변경 버전']); return 1; }
 function setupWorshipStandalone() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   if (!ss) throw new Error('찬양팀_DB 스프레드시트에서 확장 프로그램 > Apps Script로 연 뒤 실행해주세요.');
