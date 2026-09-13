@@ -1,0 +1,116 @@
+name: Build optimized schedule-only backend
+
+on:
+  push:
+    paths:
+      - '.github/workflows/build-fast-schedule-only.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Generate optimized complete Code.gs
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          src = Path('Code.gs.txt').read_text(encoding='utf-8')
+
+          # Must remain schedule-only.
+          forbidden = ['DriveApp', 'function doPost', 'uploadStart', 'uploadChunk', 'worship-score']
+          found = [x for x in forbidden if x in src]
+          if found:
+              raise SystemExit('schedule-only source contains forbidden score/drive code: ' + ', '.join(found))
+
+          s = src
+          s = s.replace('CACHE_SECONDS: 20,', "CACHE_SECONDS: 300,\n  REV_CACHE_KEY: 'WORSHIP_REVISION_V1',\n  REV_CACHE_SECONDS: 300,", 1)
+
+          # Fresh bootstrap already validates by reading each required table; skip the extra schema sweep.
+          old = "  const ss = worshipDb_();\n  worshipValidateSchema_(ss);\n  const configRows = worshipReadTable_(ss, WORSHIP_API.SHEETS.CONFIG).objects;"
+          new = "  const ss = worshipDb_();\n  const configRows = worshipReadTable_(ss, WORSHIP_API.SHEETS.CONFIG).objects;"
+          if old not in s:
+              raise SystemExit('bootstrap validation target not found')
+          s = s.replace(old, new, 1)
+
+          # Cache revision so frequent polling usually avoids SpreadsheetApp.openById entirely.
+          old_fn = re.search(r"function worshipGetRevision_\(\) \{.*?\n\}\n\nfunction worshipMutate_", s, re.S)
+          if not old_fn:
+              raise SystemExit('revision function not found')
+          new_fn = r'''function worshipGetRevision_() {
+  const cache = CacheService.getScriptCache();
+  try {
+    const cached = cache.get(WORSHIP_API.REV_CACHE_KEY);
+    if (cached !== null && cached !== '') return Number(cached || 1);
+  } catch (_) {}
+
+  const ss = worshipDb_();
+  const sheet = ss.getSheetByName(WORSHIP_API.SHEETS.CONFIG);
+  if (!sheet) throw new Error('필수 시트가 없습니다: ' + WORSHIP_API.SHEETS.CONFIG);
+  const lastRow = sheet.getLastRow();
+  let revision = 1;
+  if (lastRow >= 2) {
+    const rows = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
+    for (let i=0;i<rows.length;i++) {
+      if (String(rows[i][0]) === 'STATE_REVISION') {
+        revision = Number(rows[i][1] || 1);
+        break;
+      }
+    }
+  }
+  try { cache.put(WORSHIP_API.REV_CACHE_KEY, String(revision), WORSHIP_API.REV_CACHE_SECONDS); } catch (_) {}
+  return revision;
+}
+
+function worshipMutate_'''
+          s = s[:old_fn.start()] + new_fn + s[old_fn.end():]
+
+          old = "  try { cache.put(WORSHIP_API.CACHE_KEY, JSON.stringify(data), WORSHIP_API.CACHE_SECONDS); } catch (_) {}\n  return { ok: true, data };"
+          new = "  try {\n    cache.put(WORSHIP_API.CACHE_KEY, JSON.stringify(data), WORSHIP_API.CACHE_SECONDS);\n    cache.put(WORSHIP_API.REV_CACHE_KEY, String(data.revision || 1), WORSHIP_API.REV_CACHE_SECONDS);\n  } catch (_) {}\n  return { ok: true, data };"
+          if old not in s:
+              raise SystemExit('bootstrap cache target not found')
+          s = s.replace(old, new, 1)
+
+          old = "    CacheService.getScriptCache().remove(WORSHIP_API.CACHE_KEY);\n    return { ok:true, revision, structural };"
+          new = "    const scriptCache = CacheService.getScriptCache();\n    scriptCache.remove(WORSHIP_API.CACHE_KEY);\n    try { scriptCache.put(WORSHIP_API.REV_CACHE_KEY, String(revision), WORSHIP_API.REV_CACHE_SECONDS); } catch (_) {}\n    return { ok:true, revision, structural };"
+          if old not in s:
+              raise SystemExit('mutation cache target not found')
+          s = s.replace(old, new, 1)
+
+          # Fix stale header comment so the artifact cannot be confused with score backend.
+          s = s.replace(' * - POST: 악보 meta / uploadStart / uploadChunk / delete\n', ' * - 일정 전용: Drive/악보 업로드 코드 없음\n', 1)
+
+          # Final safety assertions.
+          found = [x for x in forbidden if x in s]
+          if found:
+              raise SystemExit('optimized artifact contains forbidden score/drive code: ' + ', '.join(found))
+          for required in ["CACHE_SECONDS: 300", 'REV_CACHE_KEY', 'function worshipGetRevision_()', 'function worshipMutate_']:
+              if required not in s:
+                  raise SystemExit('missing required marker: ' + required)
+
+          Path('Code_FAST_SCHEDULE.gs.txt').write_text(s, encoding='utf-8')
+          PY
+
+          cp Code_FAST_SCHEDULE.gs.txt /tmp/code_fast_schedule.js
+          node --check /tmp/code_fast_schedule.js
+          ! grep -q 'DriveApp' Code_FAST_SCHEDULE.gs.txt
+          ! grep -q 'function doPost' Code_FAST_SCHEDULE.gs.txt
+          ! grep -q 'uploadStart' Code_FAST_SCHEDULE.gs.txt
+          grep -q 'CACHE_SECONDS: 300' Code_FAST_SCHEDULE.gs.txt
+          grep -q 'REV_CACHE_KEY' Code_FAST_SCHEDULE.gs.txt
+
+      - name: Commit optimized backend artifact
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Code_FAST_SCHEDULE.gs.txt
+          git diff --cached --quiet && exit 0
+          git commit -m 'build schedule-only fast backend'
+          git push
