@@ -1,0 +1,121 @@
+name: Promote Worship Schedule v3.7
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/promote-schedule-v37.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: worship-schedule-v37
+  cancel-in-progress: false
+
+jobs:
+  verify-and-promote:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify dedicated Apps Script API
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, re, urllib.parse, urllib.request
+
+          base = 'https://script.google.com/macros/s/AKfycbwwYV6CBces0jCFTndl9EoKL_LU7P55TJ2eLrT1qCH0aL-XxZggaPClwz4FuZgZ3KulaQ/exec'
+
+          def call(action):
+              q = urllib.parse.urlencode({'app':'worship','action':action,'callback':'probeCb','_':'v37'})
+              req = urllib.request.Request(base + '?' + q, headers={'User-Agent':'Mozilla/5.0'})
+              with urllib.request.urlopen(req, timeout=30) as r:
+                  body = r.read().decode('utf-8')
+              m = re.fullmatch(r'\s*probeCb\((.*)\);?\s*', body, re.S)
+              if not m:
+                  raise SystemExit(f'{action}: invalid JSONP: {body[:500]}')
+              data = json.loads(m.group(1))
+              if data.get('ok') is not True:
+                  raise SystemExit(f'{action}: ok=false: {data}')
+              return data
+
+          rev = call('revision')
+          boot = call('bootstrap')
+          if not isinstance(boot.get('data'), dict):
+              raise SystemExit('bootstrap: missing data object')
+          print('revision OK:', rev.get('revision'))
+          print('bootstrap OK:', boot['data'].get('revision'))
+          print('roles:', len(boot['data'].get('roles', [])), 'members:', len(boot['data'].get('members', [])))
+          PY
+
+      - name: Promote current stable frontend to dedicated schedule API
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('index.html')
+          s = p.read_text(encoding='utf-8')
+          old_api = 'https://script.google.com/macros/s/AKfycby9srJlhi9sWjpMxJSpyhWgkNRP6RwOyVDRyPRsUDDSceflQgnFP9A7yXaGIXGuj9Ad0Q/exec'
+          new_api = 'https://script.google.com/macros/s/AKfycbwwYV6CBces0jCFTndl9EoKL_LU7P55TJ2eLrT1qCH0aL-XxZggaPClwz4FuZgZ3KulaQ/exec'
+
+          if old_api in s:
+              s = s.replace(old_api, new_api)
+          elif new_api not in s:
+              raise SystemExit('API_URL marker not found')
+
+          if "const APP_VERSION='v3.6';" in s:
+              s = s.replace("const APP_VERSION='v3.6';", "const APP_VERSION='v3.7';", 1)
+          elif "const APP_VERSION='v3.7';" not in s:
+              raise SystemExit('APP_VERSION marker not found')
+
+          if old_api in s:
+              raise SystemExit('old shared API remains in index.html')
+          if new_api not in s:
+              raise SystemExit('new dedicated API missing')
+          if "const APP_VERSION='v3.7';" not in s:
+              raise SystemExit('v3.7 marker missing')
+
+          p.write_text(s, encoding='utf-8')
+          PY
+
+      - name: Static frontend preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re, subprocess, tempfile
+          s = Path('index.html').read_text(encoding='utf-8')
+          scripts = re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>', s, re.S | re.I)
+          if not scripts:
+              raise SystemExit('no inline script found')
+          js = '\n'.join(scripts)
+          with tempfile.NamedTemporaryFile('w', suffix='.js', encoding='utf-8', delete=False) as f:
+              f.write(js)
+              name = f.name
+          subprocess.run(['node', '--check', name], check=True)
+          assert "app:'worship'" in s
+          assert 'pending=loadQueue()' in s
+          assert 'hardConnectionDown' in s
+          print('frontend preflight OK')
+          PY
+
+      - name: Commit live v3.7
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- index.html; then
+            echo 'index.html already promoted'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          git commit -m 'feat: connect live schedule to dedicated API (v3.7)'
+          git push
