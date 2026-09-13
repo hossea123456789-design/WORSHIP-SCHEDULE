@@ -72,7 +72,9 @@ main{padding:15px}.panel{display:none}.panel.active{display:block}.sectionTitle{
 
 const PLAYLIST_ID='PLDThR_8ShZAFTVEZgp2jtZaha8bThHZXB';
 const STORAGE_PREFIX='worship_fast_v3_';
-const APP_VERSION='v3.0';
+const APP_VERSION='v3.1';
+const BOOTSTRAP_TIMEOUT_MS=25000;
+const MUTATE_TIMEOUT_MS=25000;
 
 const API_URL='https://script.google.com/macros/s/AKfycby9srJlhi9sWjpMxJSpyhWgkNRP6RwOyVDRyPRsUDDSceflQgnFP9A7yXaGIXGuj9Ad0Q/exec';
 let STATE=null;
@@ -84,6 +86,7 @@ let pending=[];
 let flushing=false;
 let retryTimer=null;
 let pollTimer=null;
+let needsFullRefresh=false;
 
 function safeGet(k){try{return localStorage.getItem(STORAGE_PREFIX+k)}catch(e){return null}}
 function safeSet(k,v){try{localStorage.setItem(STORAGE_PREFIX+k,v)}catch(e){}}
@@ -141,7 +144,7 @@ function clearLogs(){writeLogs([]);updateLogMeta();showToast('로그를 비웠�
 
 function showApiError(message){showConnectionError(message||'Apps Script 응답을 확인할 수 없습니다.')}
 
-function jsonp(action,params={},timeout=15000){
+function jsonp(action,params={},timeout=15000,options={}){
   const started=performance.now();
   logEvent('INFO','API_START',`action=${action}`);
   return new Promise((resolve,reject)=>{
@@ -156,7 +159,7 @@ function jsonp(action,params={},timeout=15000){
       if(done)return;done=true;clearTimeout(timer);
       try{delete window[cb]}catch(e){}
       script.remove();
-      if(err){logEvent('ERROR','API_FAIL',`action=${action} ms=${Math.round(performance.now()-started)} msg=${err.message||err}`);reject(err)}else{logEvent('INFO','API_OK',`action=${action} ms=${Math.round(performance.now()-started)}`);resolve(data)}
+      if(err){logEvent(options.background?'WARN':'ERROR',options.background?'API_FAIL_BG':'API_FAIL',`action=${action} ms=${Math.round(performance.now()-started)} msg=${err.message||err}`);reject(err)}else{logEvent('INFO','API_OK',`action=${action} ms=${Math.round(performance.now()-started)}`);resolve(data)}
     }
 
     window[cb]=data=>finish(null,data);
@@ -206,29 +209,40 @@ function holidayMap(){
   return out;
 }
 
-async function bootstrap(showLoading=true){
+async function bootstrap(showLoading=true,silentFailure=false){
   const started=performance.now();
-  setProcess(STATE?'동기화 중…':'연결 중…','working');
-  clearConnectionError();
-  logEvent('INFO','BOOTSTRAP_START',`cached=${!!STATE}`);
+  if(!silentFailure){
+    setProcess(STATE?'동기화 중…':'연결 중…','working');
+    clearConnectionError();
+  }
+  logEvent('INFO',silentFailure?'BOOTSTRAP_BG_START':'BOOTSTRAP_START',`cached=${!!STATE}`);
 
   try{
-    const res=await jsonp('bootstrap',{},15000);
+    const res=await jsonp('bootstrap',{},BOOTSTRAP_TIMEOUT_MS,{background:silentFailure});
     if(!res||!res.ok)throw new Error((res&&res.error)||'초기 데이터를 불러오지 못했습니다.');
 
     STATE=res.data;
     pending.forEach(applyOptimistic);
     cacheState();
+    needsFullRefresh=false;
 
     const today=new Date((STATE.serverToday||keyOf(new Date()))+'T00:00:00');
     if(!viewMonth)viewMonth=new Date(today.getFullYear(),today.getMonth(),1);
 
     renderAll();
-    setProcess('연결 완료','ok');
-    logEvent('INFO','BOOTSTRAP_OK',`ms=${Math.round(performance.now()-started)} revision=${STATE.revision}`);
+    clearConnectionError();
+    if(!silentFailure||['동기화 중…','연결 중…','오프라인','동기화 실패 · 캐시 사용'].includes(processStatus)){
+      setProcess('연결 완료','ok');
+    }
+    logEvent('INFO',silentFailure?'BOOTSTRAP_BG_OK':'BOOTSTRAP_OK',`ms=${Math.round(performance.now()-started)} revision=${STATE.revision}`);
 
     if(pending.length)flushQueue();
+    return true;
   }catch(e){
+    if(silentFailure&&STATE){
+      logEvent('WARN','BOOTSTRAP_BG_FAIL',e&&e.message?e.message:String(e));
+      return false;
+    }
     logEvent('ERROR','BOOTSTRAP_FAIL',e&&e.message?e.message:String(e));
     if(STATE){
       renderAll();
@@ -237,6 +251,7 @@ async function bootstrap(showLoading=true){
     }else{
       showApiError(e&&e.message?e.message:String(e));
     }
+    return false;
   }
 }
 
@@ -322,7 +337,7 @@ async function flushQueue(){
   logEvent('INFO','SAVE_START',`type=${m.type} attempt=${m.attempts} pending=${pending.length}`);
 
   try{
-    const res=await jsonp('mutate',{payload:JSON.stringify(m)},12000);
+    const res=await jsonp('mutate',{payload:JSON.stringify(m)},MUTATE_TIMEOUT_MS);
 
     if(res&&res.busy){
       flushing=false;
@@ -351,9 +366,12 @@ async function flushQueue(){
 
     setProcess('연결 완료','ok');
 
-    // 서버 생성 ID/구조 변화 또는 로테이션 스냅샷은 백그라운드에서만 재동기화합니다.
+    // 서버 생성 ID/구조 변화 또는 로테이션 스냅샷은 백그라운드에서 재동기화합니다.
+    // 실패해도 저장 성공 상태를 오류로 덮지 않고, pollRevision에서 성공할 때까지 다시 시도합니다.
     if((m.type==='memberSave'&&!m.payload.memberId)||['memberDelete','roleSave','roleDelete','prayerOrderSet','rotationComplete'].includes(m.type)){
-      bootstrap(false);
+      needsFullRefresh=true;
+      logEvent('INFO','POST_SAVE_REFRESH',`type=${m.type}`);
+      bootstrap(false,true);
     }
   }catch(e){
     flushing=false;
@@ -371,8 +389,8 @@ async function flushQueue(){
     setProcess('저장 실패','error',e&&e.message?e.message:String(e));
     showToast('저장 실패 · 설정에서 로그를 복사해 주세요');
 
-    // 실패한 낙관 변경을 서버/캐시 기준으로 되돌림. UI는 가리지 않습니다.
-    bootstrap(false);
+    // 실패한 낙관 변경을 서버/캐시 기준으로 되돌리되 저장 실패 상태는 유지합니다.
+    bootstrap(false,true);
   }
 }
 
@@ -902,13 +920,18 @@ document.querySelectorAll('.navBtn').forEach(b=>b.onclick=()=>{
 
 async function pollRevision(){
   if(!STATE||pending.length)return;
+  if(needsFullRefresh){
+    logEvent('INFO','POST_SAVE_REFRESH_RETRY','pending full refresh');
+    await bootstrap(false,true);
+    return;
+  }
   try{
-    const r=await jsonp('revision',{},8000);
+    const r=await jsonp('revision',{},8000,{background:true});
     if(r&&r.ok&&Number(r.revision)!==Number(STATE.revision)){
       logEvent('INFO','REMOTE_CHANGE',`local=${STATE.revision} remote=${r.revision}`);
-      await bootstrap(false);
+      await bootstrap(false,true);
     }
-  }catch(e){logEvent('ERROR','REVISION_FAIL',e&&e.message?e.message:String(e))}
+  }catch(e){logEvent('WARN','REVISION_FAIL',e&&e.message?e.message:String(e))}
 }
 
 logEvent('INFO','APP_START',`version=${APP_VERSION}`);
@@ -931,7 +954,7 @@ renderPlaylist();
 bootstrap(false);
 
 pollTimer=setInterval(pollRevision,25000);
-window.addEventListener('online',()=>{logEvent('INFO','NETWORK','online');if(pending.length)flushQueue();else bootstrap(false)});
+window.addEventListener('online',()=>{logEvent('INFO','NETWORK','online');if(pending.length)flushQueue();else bootstrap(false,!!STATE)});
 window.addEventListener('offline',()=>{logEvent('INFO','NETWORK','offline');setProcess('오프라인','offline')});
 </script>
 </body>
