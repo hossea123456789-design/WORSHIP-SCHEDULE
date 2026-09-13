@@ -1,0 +1,34 @@
+name: Publish current WorshipApi
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-current-worship-api.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish current API file
+        run: |
+          cp WorshipApi_RECOVERY_v35.gs.txt WorshipApi.gs.txt
+          cp WorshipApi.gs.txt /tmp/WorshipApi.js
+          node --check /tmp/WorshipApi.js
+          grep -q "function handleWorshipApi_(e)" WorshipApi.gs.txt
+          grep -q "action === 'bootstrap'" WorshipApi.gs.txt
+          grep -q "action === 'revision'" WorshipApi.gs.txt
+          grep -q "action === 'mutate'" WorshipApi.gs.txt
+          test "$(grep -c '^function doGet' WorshipApi.gs.txt || true)" -eq 0
+          test "$(grep -c '^function doPost' WorshipApi.gs.txt || true)" -eq 0
+      - name: Commit published file
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add WorshipApi.gs.txt
+          git commit -m "fix: publish current WorshipApi recovery source"
+          git push
