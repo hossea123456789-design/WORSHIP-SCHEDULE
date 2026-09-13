@@ -118,7 +118,6 @@ function worshipMutate_(mutation) {
   if (!lock.tryLock(1800)) return { ok:true, busy:true, retryAfterMs:900 };
   try {
     const ss = worshipDb_();
-    worshipValidateSchema_(ss);
     if (worshipMutationAlreadyApplied_(ss, mutationId)) return { ok:true, revision:worshipGetRevision_(), duplicate:true };
     const now = worshipNow_();
     let structural = false;
@@ -223,7 +222,7 @@ function worshipSelectedDates_(month,events) {
   (events||[]).forEach(r=>{const date=worshipIsoDate_(r.event_date);if(date.slice(0,7)===month)map[date]=worshipTruthy_(r.active);});
   return Object.keys(map).filter(k=>map[k]).sort();
 }
-function worshipLatestBaseBefore_(month,rows) { const target=worshipMonthNum_(month), months=[...new Set((rows||[]).filter(r=>worshipTruthy_(r.active)).map(r=>String(r.base_month||'')).filter(x=>/^\d{4}-\d{2}$/.test(x)&&worshipMonthNum_(x)<target))].sort((a,b)=>worshipMonthNum_(a)-worshipMonthNum_(b)); return months.length?months[months.length-1]:''; }
+function worshipLatestBaseBefore_(month,rows) { const target=worshipMonthNum_(month), months=[...new Set((rows||[]).filter(r=>worshipTruthy_(r.active)).map(r=>String(r.base_month||'')).filter(x=>/^\d{4}-\d{2}$/.test(x)&&worshipMonthNum_(x) <= target))].sort((a,b)=>worshipMonthNum_(a)-worshipMonthNum_(b)); return months.length?months[months.length-1]:''; }
 function worshipEffectiveMemberIds_(date,roleId,month,monthDates,assignments,rotation,inheritedBase) { const explicit=(assignments||[]).filter(a=>worshipTruthy_(a.active)&&worshipIsoDate_(a.event_date)===date&&String(a.role_id)===roleId).sort((a,b)=>worshipNum_(a.sort_order)-worshipNum_(b.sort_order)); if(explicit.length)return explicit.filter(a=>String(a.member_id||'')).map(a=>String(a.member_id)); if(!inheritedBase)return[]; const targetIndex=monthDates.indexOf(date); if(targetIndex<0)return[]; const baseRows=(rotation||[]).filter(r=>worshipTruthy_(r.active)&&String(r.base_month)===inheritedBase), indices=[...new Set(baseRows.map(r=>worshipNum_(r.event_index)).filter(Boolean))].sort((a,b)=>a-b); if(!indices.length)return[]; const patternIndex=indices[targetIndex%indices.length]; return baseRows.filter(r=>worshipNum_(r.event_index)===patternIndex&&String(r.role_id)===roleId&&String(r.member_id||'')).sort((a,b)=>worshipNum_(a.sort_order)-worshipNum_(b.sort_order)).map(r=>String(r.member_id)); }
 
 function worshipMutationAlreadyApplied_(ss,mutationId) { const sheet=ss.getSheetByName(WORSHIP_API.SHEETS.MUTATION_LOG); if(!sheet||sheet.getLastRow()<2)return false; const count=Math.min(Math.max(sheet.getLastRow()-1,0),WORSHIP_API.LOG_KEEP); if(!count)return false; const start=sheet.getLastRow()-count+1, values=sheet.getRange(start,1,count,1).getDisplayValues(); return values.some(r=>String(r[0])===mutationId); }
