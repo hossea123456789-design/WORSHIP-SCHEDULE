@@ -35,3 +35,5 @@ jobs:
           git add index.html
           git commit -m "fix: stop hard-failure retry loop and recover via revision probe (v3.6)"
           git push
+
+# rerun-marker: 2
