@@ -1,0 +1,268 @@
+/**
+ * WORSHIP-SCHEDULE standalone Apps Script backend
+ * - Maple DB와 완전히 분리된 찬양팀 전용 프로젝트용
+ * - GET: bootstrap / revision / mutate(JSONP)
+ * - POST: 악보 meta / uploadStart / uploadChunk / delete
+ * - 기존 찬양팀 스프레드시트를 WORSHIP_SPREADSHEET_ID로 연결
+ */
+
+const WORSHIP_API = Object.freeze({
+  TZ: 'Asia/Seoul',
+  DB_PROP: 'WORSHIP_SPREADSHEET_ID',
+  CACHE_KEY: 'WORSHIP_BOOTSTRAP_V35',
+  CACHE_SECONDS: 20,
+  LOG_KEEP: 1500,
+  SHEETS: Object.freeze({
+    CONFIG: 'CONFIG',
+    ROLES: 'ROLES',
+    MEMBERS: 'MEMBERS',
+    MEMBER_ROLES: 'MEMBER_ROLES',
+    EVENTS: 'EVENTS',
+    ASSIGNMENTS: 'ASSIGNMENTS',
+    PRAYER_ORDER: 'PRAYER_ORDER',
+    ROTATION_BASE: 'ROTATION_BASE',
+    HOLIDAYS: 'HOLIDAYS',
+    MUTATION_LOG: 'MUTATION_LOG'
+  }),
+  HEADERS: Object.freeze({
+    CONFIG: ['key', 'value', 'description'],
+    ROLES: ['role_id', 'role_name', 'display_order', 'color_key', 'allow_multiple', 'active'],
+    MEMBERS: ['member_id', 'member_name', 'display_order', 'active'],
+    MEMBER_ROLES: ['member_id', 'role_id', 'active'],
+    EVENTS: ['event_date', 'event_type', 'title', 'active', 'source', 'updated_at'],
+    ASSIGNMENTS: ['assignment_id', 'event_date', 'role_id', 'member_id', 'sort_order', 'source', 'active', 'updated_at'],
+    PRAYER_ORDER: ['position', 'member_id', 'display_name', 'active'],
+    ROTATION_BASE: ['base_month', 'event_index', 'role_id', 'member_id', 'sort_order', 'active', 'updated_at'],
+    HOLIDAYS: ['holiday_date', 'holiday_name', 'holiday_type'],
+    MUTATION_LOG: ['mutation_id', 'client_id', 'mutation_type', 'applied_at']
+  })
+});
+
+function doGet(e) { return worshipHandleRequest_(e); }
+
+function handleWorshipApi_(e) { return worshipHandleRequest_(e); }
+function handleWorshipRequest_(e) { return worshipHandleRequest_(e); }
+function handleWorshipGet_(e) { return worshipHandleRequest_(e); }
+function handleWorshipApiRequest_(e) { return worshipHandleRequest_(e); }
+function worshipApi_(e) { return worshipHandleRequest_(e); }
+function worshipDoGet_(e) { return worshipHandleRequest_(e); }
+
+function worshipHandleRequest_(e) {
+  const p = (e && e.parameter) || {};
+  const callback = String(p.callback || '');
+  const action = String(p.action || '').trim();
+  try {
+    let result;
+    if (action === 'bootstrap') result = worshipBootstrap_();
+    else if (action === 'revision') result = { ok: true, revision: worshipGetRevision_() };
+    else if (action === 'mutate') result = worshipMutate_(worshipParseJson_(p.payload, null));
+    else result = { ok: false, error: '지원하지 않는 worship action: ' + action };
+    return worshipOutput_(result, callback);
+  } catch (err) {
+    console.error(err && err.stack ? err.stack : err);
+    return worshipOutput_({ ok: false, error: String(err && err.message ? err.message : err) }, callback);
+  }
+}
+
+function worshipOutput_(data, callback) {
+  const json = JSON.stringify(data);
+  if (callback) {
+    const cb = String(callback).replace(/[^a-zA-Z0-9_$\.]/g, '');
+    return ContentService.createTextOutput(cb + '(' + json + ');').setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+  return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
+}
+
+function worshipBootstrap_() {
+  const cache = CacheService.getScriptCache();
+  try { const cached = cache.get(WORSHIP_API.CACHE_KEY); if (cached) return { ok: true, data: JSON.parse(cached) }; } catch (_) {}
+  const ss = worshipDb_();
+  worshipValidateSchema_(ss);
+  const configRows = worshipReadTable_(ss, WORSHIP_API.SHEETS.CONFIG).objects;
+  const config = {};
+  configRows.forEach(r => { config[String(r.key || '')] = String(r.value == null ? '' : r.value); });
+  const data = {
+    revision: Number(config.STATE_REVISION || 1),
+    serverToday: Utilities.formatDate(new Date(), WORSHIP_API.TZ, 'yyyy-MM-dd'),
+    config,
+    roles: worshipReadTable_(ss, WORSHIP_API.SHEETS.ROLES).objects.filter(r => worshipTruthy_(r.active)).sort((a,b)=>worshipNum_(a.display_order)-worshipNum_(b.display_order)),
+    members: worshipReadTable_(ss, WORSHIP_API.SHEETS.MEMBERS).objects.filter(r => worshipTruthy_(r.active)).sort((a,b)=>worshipNum_(a.display_order)-worshipNum_(b.display_order)),
+    memberRoles: worshipReadTable_(ss, WORSHIP_API.SHEETS.MEMBER_ROLES).objects.filter(r => worshipTruthy_(r.active)),
+    events: worshipReadTable_(ss, WORSHIP_API.SHEETS.EVENTS).objects,
+    assignments: worshipReadTable_(ss, WORSHIP_API.SHEETS.ASSIGNMENTS).objects.filter(r => worshipTruthy_(r.active)),
+    prayerOrder: worshipReadTable_(ss, WORSHIP_API.SHEETS.PRAYER_ORDER).objects.filter(r => worshipTruthy_(r.active)).sort((a,b)=>worshipNum_(a.position)-worshipNum_(b.position)),
+    rotationBase: worshipReadTable_(ss, WORSHIP_API.SHEETS.ROTATION_BASE).objects.filter(r => worshipTruthy_(r.active)),
+    holidays: worshipReadTable_(ss, WORSHIP_API.SHEETS.HOLIDAYS).objects
+  };
+  try { cache.put(WORSHIP_API.CACHE_KEY, JSON.stringify(data), WORSHIP_API.CACHE_SECONDS); } catch (_) {}
+  return { ok: true, data };
+}
+
+function worshipGetRevision_() {
+  const ss = worshipDb_();
+  const sheet = ss.getSheetByName(WORSHIP_API.SHEETS.CONFIG);
+  if (!sheet) throw new Error('필수 시트가 없습니다: ' + WORSHIP_API.SHEETS.CONFIG);
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return 1;
+  const rows = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
+  for (let i=0;i<rows.length;i++) if (String(rows[i][0]) === 'STATE_REVISION') return Number(rows[i][1] || 1);
+  return 1;
+}
+
+function worshipMutate_(mutation) {
+  if (!mutation || typeof mutation !== 'object') throw new Error('저장 요청 형식이 올바르지 않습니다.');
+  const mutationId = String(mutation.id || '');
+  const clientId = String(mutation.clientId || '');
+  const type = String(mutation.type || '');
+  const payload = mutation.payload || {};
+  if (!mutationId || !type) throw new Error('mutation id/type이 없습니다.');
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(1800)) return { ok:true, busy:true, retryAfterMs:900 };
+  try {
+    const ss = worshipDb_();
+    if (worshipMutationAlreadyApplied_(ss, mutationId)) return { ok:true, revision:worshipGetRevision_(), duplicate:true };
+    const now = worshipNow_();
+    let structural = false;
+    switch(type) {
+      case 'assignmentSet': worshipSetAssignment_(ss,payload,now); break;
+      case 'eventSet': worshipSetEvent_(ss,payload,now); break;
+      case 'memberSave': structural=worshipSaveMember_(ss,payload,now); break;
+      case 'memberDelete': structural=true; worshipDeleteMember_(ss,payload,now); break;
+      case 'roleSave': structural=worshipSaveRole_(ss,payload,now); break;
+      case 'roleDelete': structural=true; worshipDeleteRole_(ss,payload,now); break;
+      case 'prayerOrderSet': structural=true; worshipSetPrayerOrder_(ss,payload,now); break;
+      case 'rotationComplete': structural=true; worshipSaveRotationSnapshot_(ss,payload,now); break;
+      default: throw new Error('지원하지 않는 저장 작업: ' + type);
+    }
+    const revision = worshipIncrementRevision_(ss, now);
+    worshipAppendMutationLog_(ss, mutationId, clientId, type, now);
+    SpreadsheetApp.flush();
+    CacheService.getScriptCache().remove(WORSHIP_API.CACHE_KEY);
+    return { ok:true, revision, structural };
+  } catch(err) {
+    console.error(err && err.stack ? err.stack : err);
+    return { ok:false, error:String(err && err.message ? err.message : err) };
+  } finally { lock.releaseLock(); }
+}
+
+function worshipSetAssignment_(ss,p,now) {
+  const date=String(p.date||''), roleId=String(p.roleId||'');
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!roleId) throw new Error('배정 날짜/역할이 올바르지 않습니다.');
+  const role=worshipReadTable_(ss,WORSHIP_API.SHEETS.ROLES).objects.find(r=>String(r.role_id)===roleId&&worshipTruthy_(r.active));
+  if(!role) throw new Error('존재하지 않는 역할입니다.');
+  let memberIds=Array.isArray(p.memberIds)?p.memberIds.map(String).filter(Boolean):[];
+  memberIds=[...new Set(memberIds)]; if(!worshipTruthy_(role.allow_multiple)) memberIds=memberIds.slice(0,1);
+  const table=worshipReadTable_(ss,WORSHIP_API.SHEETS.ASSIGNMENTS);
+  table.objects.forEach(r=>{ if(worshipIsoDate_(r.event_date)===date&&String(r.role_id)===roleId&&worshipTruthy_(r.active)){r.active=false;r.updated_at=now;table.dirty=true;} });
+  if(!memberIds.length){ table.objects.push({assignment_id:worshipId_('a'),event_date:date,role_id:roleId,member_id:'',sort_order:0,source:'manual_clear',active:true,updated_at:now}); table.dirty=true; }
+  else memberIds.forEach((memberId,i)=>{table.objects.push({assignment_id:worshipId_('a'),event_date:date,role_id:roleId,member_id:memberId,sort_order:i+1,source:'manual',active:true,updated_at:now});table.dirty=true;});
+  worshipWriteTable_(table);
+}
+
+function worshipSetEvent_(ss,p,now) {
+  const date=String(p.date||''); if(!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('일정 날짜가 올바르지 않습니다.');
+  const table=worshipReadTable_(ss,WORSHIP_API.SHEETS.EVENTS); let row=table.objects.find(r=>worshipIsoDate_(r.event_date)===date);
+  if(!row){row={event_date:date,event_type:'worship',title:String(p.title||''),active:!!p.active,source:'manual',updated_at:now};table.objects.push(row);} else {row.event_type=String(row.event_type||'worship');row.title=String(p.title==null?row.title||'':p.title);row.active=!!p.active;row.source='manual';row.updated_at=now;}
+  table.dirty=true; worshipWriteTable_(table);
+}
+
+function worshipSaveMember_(ss,p,now) {
+  const table=worshipReadTable_(ss,WORSHIP_API.SHEETS.MEMBERS), mr=worshipReadTable_(ss,WORSHIP_API.SHEETS.MEMBER_ROLES), name=String(p.name||'').trim();
+  if(!name) throw new Error('멤버 이름을 입력해주세요.');
+  const isNew=!String(p.memberId||''), memberId=isNew?worshipId_('m'):String(p.memberId); let row=table.objects.find(r=>String(r.member_id)===memberId);
+  if(!row){const max=table.objects.reduce((m,r)=>Math.max(m,worshipNum_(r.display_order)),0);row={member_id:memberId,member_name:name,display_order:max+1,active:true,updated_at:now};table.objects.push(row);} else {row.member_name=name;row.active=true;row.updated_at=now;}
+  table.dirty=true;
+  mr.objects.forEach(r=>{if(String(r.member_id)===memberId&&worshipTruthy_(r.active)){r.active=false;r.updated_at=now;mr.dirty=true;}});
+  const roleIds=Array.isArray(p.roleIds)?[...new Set(p.roleIds.map(String).filter(Boolean))]:[];
+  roleIds.forEach(roleId=>{let link=mr.objects.find(r=>String(r.member_id)===memberId&&String(r.role_id)===roleId);if(!link){link={member_id:memberId,role_id:roleId,active:true,updated_at:now};mr.objects.push(link);}else{link.active=true;link.updated_at=now;}mr.dirty=true;});
+  worshipWriteTable_(table); worshipWriteTable_(mr); return isNew;
+}
+
+function worshipDeleteMember_(ss,p,now) {
+  const id=String(p.memberId||''); if(!id) throw new Error('삭제할 멤버 ID가 없습니다.');
+  const table=worshipReadTable_(ss,WORSHIP_API.SHEETS.MEMBERS), row=table.objects.find(r=>String(r.member_id)===id);
+  if(row){row.active=false;row.updated_at=now;table.dirty=true;worshipWriteTable_(table);}
+  const mr=worshipReadTable_(ss,WORSHIP_API.SHEETS.MEMBER_ROLES); mr.objects.forEach(r=>{if(String(r.member_id)===id&&worshipTruthy_(r.active)){r.active=false;r.updated_at=now;mr.dirty=true;}}); if(mr.dirty) worshipWriteTable_(mr);
+  const prayer=worshipReadTable_(ss,WORSHIP_API.SHEETS.PRAYER_ORDER), before=prayer.objects.filter(r=>worshipTruthy_(r.active)), active=before.filter(r=>String(r.member_id)!==id);
+  if(active.length!==before.length){prayer.objects=active.map((r,i)=>({position:i+1,member_id:String(r.member_id||''),display_name:String(r.display_name||''),active:true,updated_at:now}));prayer.dirty=true;worshipWriteTable_(prayer);}
+}
+
+function worshipSaveRole_(ss,p,now) {
+  const table=worshipReadTable_(ss,WORSHIP_API.SHEETS.ROLES), name=String(p.name||'').trim(); if(!name) throw new Error('역할명을 입력해주세요.');
+  const isNew=!String(p.roleId||''), roleId=isNew?worshipId_('r'):String(p.roleId); let row=table.objects.find(r=>String(r.role_id)===roleId);
+  if(!row){const max=table.objects.reduce((m,r)=>Math.max(m,worshipNum_(r.display_order)),0);row={role_id:roleId,role_name:name,display_order:max+1,color_key:String(p.colorKey||'other'),allow_multiple:!!p.allowMultiple,active:true,updated_at:now};table.objects.push(row);} else {row.role_name=name;row.color_key=String(p.colorKey||'other');row.allow_multiple=!!p.allowMultiple;row.active=true;row.updated_at=now;}
+  table.dirty=true; worshipWriteTable_(table); return isNew;
+}
+
+function worshipDeleteRole_(ss,p,now) {
+  const id=String(p.roleId||''); if(!id) throw new Error('삭제할 역할 ID가 없습니다.');
+  const table=worshipReadTable_(ss,WORSHIP_API.SHEETS.ROLES), row=table.objects.find(r=>String(r.role_id)===id); if(row){row.active=false;row.updated_at=now;table.dirty=true;worshipWriteTable_(table);}
+  const mr=worshipReadTable_(ss,WORSHIP_API.SHEETS.MEMBER_ROLES); mr.objects.forEach(r=>{if(String(r.role_id)===id&&worshipTruthy_(r.active)){r.active=false;r.updated_at=now;mr.dirty=true;}}); if(mr.dirty) worshipWriteTable_(mr);
+}
+
+function worshipSetPrayerOrder_(ss,p,now) {
+  const ids=Array.isArray(p.memberIds)?p.memberIds.map(String).filter(Boolean):[], members=worshipReadTable_(ss,WORSHIP_API.SHEETS.MEMBERS).objects, names={}; members.forEach(r=>{names[String(r.member_id)]=String(r.member_name||'');});
+  const table=worshipReadTable_(ss,WORSHIP_API.SHEETS.PRAYER_ORDER); table.objects=ids.map((id,i)=>({position:i+1,member_id:id,display_name:names[id]||'',active:true,updated_at:now})); table.dirty=true; worshipWriteTable_(table);
+}
+
+function worshipSaveRotationSnapshot_(ss,p,now) {
+  const month=String(p.month||''); if(!/^\d{4}-\d{2}$/.test(month)) throw new Error('편성 기준 월이 올바르지 않습니다.');
+  const events=worshipReadTable_(ss,WORSHIP_API.SHEETS.EVENTS).objects;
+  const assignments=worshipReadTable_(ss,WORSHIP_API.SHEETS.ASSIGNMENTS).objects.filter(r=>worshipTruthy_(r.active));
+  const rotationTable=worshipReadTable_(ss,WORSHIP_API.SHEETS.ROTATION_BASE), activeRotation=rotationTable.objects.filter(r=>worshipTruthy_(r.active));
+  const roles=worshipReadTable_(ss,WORSHIP_API.SHEETS.ROLES).objects.filter(r=>worshipTruthy_(r.active)), dates=worshipSelectedDates_(month,events);
+  if(!dates.length) throw new Error('저장할 찬양 일정이 없습니다.');
+  const inherited=worshipLatestBaseBefore_(month,activeRotation), snapshot=dates.map(date=>{const slot={};roles.forEach(role=>{slot[String(role.role_id)]=worshipEffectiveMemberIds_(date,String(role.role_id),month,dates,assignments,activeRotation,inherited);});return slot;});
+  rotationTable.objects.forEach(r=>{if(String(r.base_month)===month&&worshipTruthy_(r.active)){r.active=false;r.updated_at=now;rotationTable.dirty=true;}});
+  snapshot.forEach((slot,index)=>Object.keys(slot).forEach(roleId=>(slot[roleId]||[]).forEach((memberId,order)=>{rotationTable.objects.push({base_month:month,event_index:index+1,role_id:roleId,member_id:String(memberId),sort_order:order+1,active:true,updated_at:now});rotationTable.dirty=true;})));
+  worshipWriteTable_(rotationTable);
+}
+
+function worshipSelectedDates_(month,events) {
+  const parts=month.split('-').map(Number), y=parts[0], m=parts[1], map={}, last=new Date(y,m,0).getDate();
+  for(let d=1;d<=last;d++){const dt=new Date(y,m-1,d);if(dt.getDay()===0)map[y+'-'+('0'+m).slice(-2)+'-'+('0'+d).slice(-2)]=true;}
+  (events||[]).forEach(r=>{const date=worshipIsoDate_(r.event_date);if(date.slice(0,7)===month)map[date]=worshipTruthy_(r.active);});
+  return Object.keys(map).filter(k=>map[k]).sort();
+}
+function worshipLatestBaseBefore_(month,rows) { const target=worshipMonthNum_(month), months=[...new Set((rows||[]).filter(r=>worshipTruthy_(r.active)).map(r=>String(r.base_month||'')).filter(x=>/^\d{4}-\d{2}$/.test(x)&&worshipMonthNum_(x) <= target))].sort((a,b)=>worshipMonthNum_(a)-worshipMonthNum_(b)); return months.length?months[months.length-1]:''; }
+function worshipEffectiveMemberIds_(date,roleId,month,monthDates,assignments,rotation,inheritedBase) { const explicit=(assignments||[]).filter(a=>worshipTruthy_(a.active)&&worshipIsoDate_(a.event_date)===date&&String(a.role_id)===roleId).sort((a,b)=>worshipNum_(a.sort_order)-worshipNum_(b.sort_order)); if(explicit.length)return explicit.filter(a=>String(a.member_id||'')).map(a=>String(a.member_id)); if(!inheritedBase)return[]; const targetIndex=monthDates.indexOf(date); if(targetIndex<0)return[]; const baseRows=(rotation||[]).filter(r=>worshipTruthy_(r.active)&&String(r.base_month)===inheritedBase), indices=[...new Set(baseRows.map(r=>worshipNum_(r.event_index)).filter(Boolean))].sort((a,b)=>a-b); if(!indices.length)return[]; const patternIndex=indices[targetIndex%indices.length]; return baseRows.filter(r=>worshipNum_(r.event_index)===patternIndex&&String(r.role_id)===roleId&&String(r.member_id||'')).sort((a,b)=>worshipNum_(a.sort_order)-worshipNum_(b.sort_order)).map(r=>String(r.member_id)); }
+
+function worshipMutationAlreadyApplied_(ss,mutationId) { const sheet=ss.getSheetByName(WORSHIP_API.SHEETS.MUTATION_LOG); if(!sheet||sheet.getLastRow()<2)return false; const count=Math.min(Math.max(sheet.getLastRow()-1,0),WORSHIP_API.LOG_KEEP); if(!count)return false; const start=sheet.getLastRow()-count+1, values=sheet.getRange(start,1,count,1).getDisplayValues(); return values.some(r=>String(r[0])===mutationId); }
+function worshipAppendMutationLog_(ss,mutationId,clientId,type,now) { const sheet=ss.getSheetByName(WORSHIP_API.SHEETS.MUTATION_LOG); if(!sheet)throw new Error('필수 시트가 없습니다: '+WORSHIP_API.SHEETS.MUTATION_LOG); sheet.appendRow([mutationId,clientId,type,now]); const rows=Math.max(sheet.getLastRow()-1,0); if(rows>WORSHIP_API.LOG_KEEP)sheet.deleteRows(2,rows-WORSHIP_API.LOG_KEEP); }
+function worshipIncrementRevision_(ss,now) { const sheet=ss.getSheetByName(WORSHIP_API.SHEETS.CONFIG); if(!sheet)throw new Error('필수 시트가 없습니다: '+WORSHIP_API.SHEETS.CONFIG); const last=sheet.getLastRow(); if(last>=2){const values=sheet.getRange(2,1,last-1,2).getValues();for(let i=0;i<values.length;i++){if(String(values[i][0])==='STATE_REVISION'){const next=Number(values[i][1]||0)+1;sheet.getRange(i+2,2).setValue(String(next));return next;}}} sheet.appendRow(['STATE_REVISION','1','공용 데이터 변경 버전']); return 1; }
+
+function setupWorshipStandalone() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) throw new Error('찬양팀_DB 스프레드시트에서 확장 프로그램 > Apps Script로 연 뒤 실행해주세요.');
+  PropertiesService.getScriptProperties().setProperty(WORSHIP_API.DB_PROP, ss.getId());
+  worshipValidateSchema_(ss);
+  // Force the exact Sheets permission the deployed web app will use.
+  const reopened = SpreadsheetApp.openById(ss.getId());
+  reopened.getName();
+  SpreadsheetApp.flush();
+  return '일정 백엔드 연결/권한 확인 완료: ' + ss.getName();
+}
+
+function setWorshipSpreadsheetId(id) {
+  const value = String(id || '').trim();
+  if (!value) throw new Error('스프레드시트 ID가 비어 있습니다.');
+  const ss = SpreadsheetApp.openById(value);
+  PropertiesService.getScriptProperties().setProperty(WORSHIP_API.DB_PROP, ss.getId());
+  return ss.getName();
+}
+
+function worshipDb_() {
+  const id = PropertiesService.getScriptProperties().getProperty(WORSHIP_API.DB_PROP);
+  if (!id) throw new Error('WORSHIP_SPREADSHEET_ID가 없습니다. setWorshipSpreadsheetId("스프레드시트ID")를 한 번 실행해주세요.');
+  return SpreadsheetApp.openById(id);
+}
+function worshipValidateSchema_(ss) { Object.keys(WORSHIP_API.HEADERS).forEach(sheetName=>{const sheet=ss.getSheetByName(sheetName);if(!sheet)throw new Error('필수 시트가 없습니다: '+sheetName);const expected=WORSHIP_API.HEADERS[sheetName], actual=sheet.getRange(1,1,1,expected.length).getDisplayValues()[0].map(String);expected.forEach((h,i)=>{if(actual[i]!==h)throw new Error(sheetName+' 시트 '+(i+1)+'열은 ['+h+'] 이어야 합니다.');});}); }
+function worshipReadTable_(ss,sheetName) { const sheet=ss.getSheetByName(sheetName);if(!sheet)throw new Error('시트 없음: '+sheetName);const headers=WORSHIP_API.HEADERS[sheetName], last=Math.max(sheet.getLastRow(),1), values=last>1?sheet.getRange(2,1,last-1,headers.length).getValues():[], objects=values.filter(row=>row.some(v=>v!==''&&v!=null)).map(row=>{const o={};headers.forEach((h,i)=>{o[h]=row[i];});return o;});return{sheet,headers,objects,oldCount:Math.max(last-1,0),dirty:false}; }
+function worshipWriteTable_(table) { if(!table||!table.dirty)return;const rows=table.objects.map(o=>table.headers.map(h=>o[h]==null?'':o[h])), clearCount=Math.max(table.oldCount,rows.length);if(clearCount>0)table.sheet.getRange(2,1,clearCount,table.headers.length).clearContent();if(rows.length)table.sheet.getRange(2,1,rows.length,table.headers.length).setValues(rows);table.oldCount=rows.length;table.dirty=false; }
+function worshipParseJson_(value,fallback){if(value===''||value==null)return fallback;try{return JSON.parse(String(value));}catch(_){return fallback;}}
+function worshipTruthy_(v){if(v===true)return true;const s=String(v==null?'':v).trim().toLowerCase();return s==='true'||s==='1'||s==='y'||s==='yes';}
+function worshipNum_(v){const n=Number(v);return Number.isFinite(n)?n:0;}
+function worshipIsoDate_(v){if(!v&&v!==0)return'';if(Object.prototype.toString.call(v)==='[object Date]'&&!isNaN(v))return Utilities.formatDate(v,WORSHIP_API.TZ,'yyyy-MM-dd');const s=String(v).trim(),m=s.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/);if(!m)return s;return m[1]+'-'+('0'+m[2]).slice(-2)+'-'+('0'+m[3]).slice(-2);}
+function worshipMonthNum_(month){const p=String(month||'').split('-').map(Number);return p[0]*12+(p[1]-1);}
+function worshipNow_(){return Utilities.formatDate(new Date(),WORSHIP_API.TZ,'yyyy-MM-dd HH:mm:ss');}
+function worshipId_(prefix){return prefix+'_'+Utilities.getUuid().replace(/-/g,'').slice(0,16);}
