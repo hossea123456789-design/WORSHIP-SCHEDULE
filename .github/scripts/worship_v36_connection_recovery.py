@@ -10,6 +10,13 @@ def rep(old,new,label):
         raise SystemExit(f'PATCH FAIL [{label}] expected 1 match, got {c}')
     s=s.replace(old,new,1)
 
+def rep_first(old,new,label):
+    global s
+    c=s.count(old)
+    if c<1:
+        raise SystemExit(f'PATCH FAIL [{label}] expected at least 1 match, got {c}')
+    s=s.replace(old,new,1)
+
 rep("const APP_VERSION='v3.5';","const APP_VERSION='v3.6';",'version')
 rep("let lastHardConnectionToastAt=0;","let lastHardConnectionToastAt=0;\nlet hardConnectionDown=false;",'connection state')
 
@@ -52,7 +59,9 @@ new_hard="""    if(isHardConnectionError(e)){
 """
 rep(old_hard,new_hard,'hard failure retry stop')
 
-rep("if(pending.length&&!flushing){\n      clearTimeout(retryTimer);\n      retryTimer=setTimeout(flushQueue,50);\n    }",
+# 이 동일한 조각은 bootstrap finally와 pollRevision finally에 모두 존재합니다.
+# 파일 순서상 첫 번째는 bootstrap이므로 첫 번째 것만 먼저 보호합니다.
+rep_first("if(pending.length&&!flushing){\n      clearTimeout(retryTimer);\n      retryTimer=setTimeout(flushQueue,50);\n    }",
     "if(pending.length&&!flushing&&!hardConnectionDown){\n      clearTimeout(retryTimer);\n      retryTimer=setTimeout(flushQueue,50);\n    }",
     'bootstrap finally guard')
 
@@ -158,7 +167,6 @@ rep("window.addEventListener('online',()=>{logEvent('INFO','NETWORK','online');i
 
 p.write_text(s,encoding='utf-8')
 
-# Preflight invariants
 checks={
   'version':"const APP_VERSION='v3.6';" in s,
   'hard flag':'let hardConnectionDown=false;' in s,
