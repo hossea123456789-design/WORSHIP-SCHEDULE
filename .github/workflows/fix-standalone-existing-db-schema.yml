@@ -1,0 +1,65 @@
+name: Fix standalone backend to existing worship DB schema
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-standalone-existing-db-schema.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch backend schema to existing worship DB
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('WorshipStandalone.gs.txt')
+          s=p.read_text(encoding='utf-8')
+          reps={
+            "CONFIG: 'APP_CONFIG'":"CONFIG: 'CONFIG'",
+            "APP_CONFIG: ['key', 'value', 'description', 'updated_at']":"CONFIG: ['key', 'value', 'description']",
+            "ROLES: ['role_id', 'role_name', 'display_order', 'color_key', 'allow_multiple', 'active', 'updated_at']":"ROLES: ['role_id', 'role_name', 'display_order', 'color_key', 'allow_multiple', 'active']",
+            "MEMBERS: ['member_id', 'member_name', 'display_order', 'active', 'updated_at']":"MEMBERS: ['member_id', 'member_name', 'display_order', 'active']",
+            "MEMBER_ROLES: ['member_id', 'role_id', 'active', 'updated_at']":"MEMBER_ROLES: ['member_id', 'role_id', 'active']",
+            "PRAYER_ORDER: ['position', 'member_id', 'display_name', 'active', 'updated_at']":"PRAYER_ORDER: ['position', 'member_id', 'display_name', 'active']",
+          }
+          for old,new in reps.items():
+            c=s.count(old)
+            if c!=1:
+              raise SystemExit(f'anchor mismatch {old!r}: {c}')
+            s=s.replace(old,new,1)
+
+          old="""function worshipIncrementRevision_(ss,now) { const sheet=ss.getSheetByName(WORSHIP_API.SHEETS.CONFIG); if(!sheet)throw new Error('필수 시트가 없습니다: '+WORSHIP_API.SHEETS.CONFIG); const last=sheet.getLastRow(); if(last>=2){const values=sheet.getRange(2,1,last-1,2).getValues();for(let i=0;i<values.length;i++){if(String(values[i][0])==='STATE_REVISION'){const next=Number(values[i][1]||0)+1;sheet.getRange(i+2,2).setValue(String(next));sheet.getRange(i+2,4).setValue(now);return next;}}} sheet.appendRow(['STATE_REVISION','1','공용 데이터 변경 버전',now]); return 1; }"""
+          new="""function worshipIncrementRevision_(ss,now) { const sheet=ss.getSheetByName(WORSHIP_API.SHEETS.CONFIG); if(!sheet)throw new Error('필수 시트가 없습니다: '+WORSHIP_API.SHEETS.CONFIG); const last=sheet.getLastRow(); if(last>=2){const values=sheet.getRange(2,1,last-1,2).getValues();for(let i=0;i<values.length;i++){if(String(values[i][0])==='STATE_REVISION'){const next=Number(values[i][1]||0)+1;sheet.getRange(i+2,2).setValue(String(next));return next;}}} sheet.appendRow(['STATE_REVISION','1','공용 데이터 변경 버전']); return 1; }"""
+          c=s.count(old)
+          if c!=1:
+            raise SystemExit(f'revision anchor mismatch: {c}')
+          s=s.replace(old,new,1)
+          p.write_text(s,encoding='utf-8')
+          print('PATCH OK')
+          PY
+      - name: Static preflight
+        run: |
+          cp WorshipStandalone.gs.txt /tmp/WorshipStandalone.js
+          node --check /tmp/WorshipStandalone.js
+          grep -q "CONFIG: 'CONFIG'" WorshipStandalone.gs.txt
+          grep -q "CONFIG: \['key', 'value', 'description'\]" WorshipStandalone.gs.txt
+          ! grep -q "APP_CONFIG" WorshipStandalone.gs.txt
+          grep -q "ROLES: \['role_id', 'role_name', 'display_order', 'color_key', 'allow_multiple', 'active'\]" WorshipStandalone.gs.txt
+          grep -q "MEMBERS: \['member_id', 'member_name', 'display_order', 'active'\]" WorshipStandalone.gs.txt
+          grep -q "MEMBER_ROLES: \['member_id', 'role_id', 'active'\]" WorshipStandalone.gs.txt
+          grep -q "PRAYER_ORDER: \['position', 'member_id', 'display_name', 'active'\]" WorshipStandalone.gs.txt
+          test "$(grep -o 'getRange(i+2,4)' WorshipStandalone.gs.txt | wc -l)" -eq 0
+          echo 'SCHEMA PREFLIGHT OK'
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add WorshipStandalone.gs.txt
+          git commit -m "fix: match standalone backend to existing worship DB schema"
+          git push
