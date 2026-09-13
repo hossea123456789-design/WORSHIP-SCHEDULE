@@ -106,6 +106,10 @@ function uploadScoreChunk_(p) {
   if (!raw) throw new Error('업로드 세션이 만료되었습니다. 다시 업로드해주세요.');
 
   const meta = JSON.parse(raw);
+  if (meta.complete && meta.fileId) {
+    const completedFile = DriveApp.getFileById(String(meta.fileId));
+    return { ok: true, complete: true, receivedBytes: Number(meta.totalSize || 0), file: buildScoreMeta_(completedFile, String(meta.updatedAt || '')) };
+  }
   const start = Number(p.start || 0);
   const end = Number(p.end || -1);
   const totalSize = Number(p.totalSize || meta.totalSize || 0);
@@ -174,7 +178,11 @@ function uploadScoreChunk_(p) {
       [SCORE_STORE.MIME_PROP]: meta.mimeType,
       [SCORE_STORE.UPDATED_PROP]: updatedAt
     }, true);
-    props.deleteProperty(key);
+    meta.complete = true;
+    meta.fileId = fileId;
+    meta.updatedAt = updatedAt;
+    meta.nextStart = totalSize;
+    props.setProperty(key, JSON.stringify(meta));
 
     return { ok: true, complete: true, receivedBytes: totalSize, file: buildScoreMeta_(file, updatedAt) };
   }
