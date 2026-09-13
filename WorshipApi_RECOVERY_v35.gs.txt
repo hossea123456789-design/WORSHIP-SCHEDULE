@@ -8,7 +8,7 @@
 
 const WORSHIP_API = Object.freeze({
   TZ: 'Asia/Seoul',
-  DB_PROP: 'WORSHIP_DB_ID',
+  DB_PROP: 'SPREADSHEET_ID',
   CACHE_KEY: 'WORSHIP_BOOTSTRAP_V35',
   CACHE_SECONDS: 20,
   LOG_KEEP: 1500,
@@ -228,7 +228,14 @@ function worshipEffectiveMemberIds_(date,roleId,month,monthDates,assignments,rot
 function worshipMutationAlreadyApplied_(ss,mutationId) { const sheet=ss.getSheetByName(WORSHIP_API.SHEETS.MUTATION_LOG); if(!sheet||sheet.getLastRow()<2)return false; const count=Math.min(Math.max(sheet.getLastRow()-1,0),WORSHIP_API.LOG_KEEP); if(!count)return false; const start=sheet.getLastRow()-count+1, values=sheet.getRange(start,1,count,1).getDisplayValues(); return values.some(r=>String(r[0])===mutationId); }
 function worshipAppendMutationLog_(ss,mutationId,clientId,type,now) { const sheet=ss.getSheetByName(WORSHIP_API.SHEETS.MUTATION_LOG); if(!sheet)throw new Error('필수 시트가 없습니다: '+WORSHIP_API.SHEETS.MUTATION_LOG); sheet.appendRow([mutationId,clientId,type,now]); const rows=Math.max(sheet.getLastRow()-1,0); if(rows>WORSHIP_API.LOG_KEEP)sheet.deleteRows(2,rows-WORSHIP_API.LOG_KEEP); }
 function worshipIncrementRevision_(ss,now) { const sheet=ss.getSheetByName(WORSHIP_API.SHEETS.CONFIG); if(!sheet)throw new Error('필수 시트가 없습니다: '+WORSHIP_API.SHEETS.CONFIG); const last=sheet.getLastRow(); if(last>=2){const values=sheet.getRange(2,1,last-1,2).getValues();for(let i=0;i<values.length;i++){if(String(values[i][0])==='STATE_REVISION'){const next=Number(values[i][1]||0)+1;sheet.getRange(i+2,2).setValue(String(next));sheet.getRange(i+2,4).setValue(now);return next;}}} sheet.appendRow(['STATE_REVISION','1','공용 데이터 변경 버전',now]); return 1; }
-function worshipDb_() { const id=PropertiesService.getScriptProperties().getProperty(WORSHIP_API.DB_PROP); if(!id)throw new Error('WORSHIP_DB_ID를 찬양팀 스프레드시트 ID로 설정해주세요.'); return SpreadsheetApp.openById(id); }
+function worshipDb_() {
+  const props = PropertiesService.getScriptProperties();
+  const id = props.getProperty(WORSHIP_API.DB_PROP) || props.getProperty('WORSHIP_DB_ID');
+  if (id) return SpreadsheetApp.openById(id);
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) throw new Error('스프레드시트 연결 정보가 없습니다. 기존 SPREADSHEET_ID 또는 연결 스프레드시트를 확인해주세요.');
+  return ss;
+}
 function worshipValidateSchema_(ss) { Object.keys(WORSHIP_API.HEADERS).forEach(sheetName=>{const sheet=ss.getSheetByName(sheetName);if(!sheet)throw new Error('필수 시트가 없습니다: '+sheetName);const expected=WORSHIP_API.HEADERS[sheetName], actual=sheet.getRange(1,1,1,expected.length).getDisplayValues()[0].map(String);expected.forEach((h,i)=>{if(actual[i]!==h)throw new Error(sheetName+' 시트 '+(i+1)+'열은 ['+h+'] 이어야 합니다.');});}); }
 function worshipReadTable_(ss,sheetName) { const sheet=ss.getSheetByName(sheetName);if(!sheet)throw new Error('시트 없음: '+sheetName);const headers=WORSHIP_API.HEADERS[sheetName], last=Math.max(sheet.getLastRow(),1), values=last>1?sheet.getRange(2,1,last-1,headers.length).getValues():[], objects=values.filter(row=>row.some(v=>v!==''&&v!=null)).map(row=>{const o={};headers.forEach((h,i)=>{o[h]=row[i];});return o;});return{sheet,headers,objects,oldCount:Math.max(last-1,0),dirty:false}; }
 function worshipWriteTable_(table) { if(!table||!table.dirty)return;const rows=table.objects.map(o=>table.headers.map(h=>o[h]==null?'':o[h])), clearCount=Math.max(table.oldCount,rows.length);if(clearCount>0)table.sheet.getRange(2,1,clearCount,table.headers.length).clearContent();if(rows.length)table.sheet.getRange(2,1,rows.length,table.headers.length).setValues(rows);table.oldCount=rows.length;table.dirty=false; }
