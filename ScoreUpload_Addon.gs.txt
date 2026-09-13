@@ -13,28 +13,29 @@ const SCORE_STORE = Object.freeze({
 });
 
 function doPost(e) {
+  const p = (e && e.parameter) || {};
+  const requestId = String(p.requestId || '');
   try {
-    const p = (e && e.parameter) || {};
     if (String(p.app || '') !== SCORE_STORE.APP) {
-      return scoreReply_({ ok: false, error: '지원하지 않는 요청입니다.' });
+      return scoreReply_({ ok: false, error: '지원하지 않는 요청입니다.' }, requestId);
     }
 
     const action = String(p.action || '');
     if (action === 'meta') {
-      return scoreReply_({ ok: true, file: getCurrentScoreMeta_() });
+      return scoreReply_({ ok: true, file: getCurrentScoreMeta_() }, requestId);
     }
     if (action === 'upload') {
-      return scoreReply_(uploadCurrentScore_(p));
+      return scoreReply_(uploadCurrentScore_(p), requestId);
     }
     if (action === 'delete') {
       deleteCurrentScore_();
-      return scoreReply_({ ok: true, file: null });
+      return scoreReply_({ ok: true, file: null }, requestId);
     }
 
-    return scoreReply_({ ok: false, error: '지원하지 않는 악보 작업입니다.' });
+    return scoreReply_({ ok: false, error: '지원하지 않는 악보 작업입니다.' }, requestId);
   } catch (err) {
     console.error(err && err.stack ? err.stack : err);
-    return scoreReply_({ ok: false, error: String(err && err.message ? err.message : err) });
+    return scoreReply_({ ok: false, error: String(err && err.message ? err.message : err) }, requestId);
   }
 }
 
@@ -145,8 +146,8 @@ function getScoreFolder_() {
   return folder;
 }
 
-function scoreReply_(data) {
-  const payload = Object.assign({ source: 'worship-score-api' }, data || {});
+function scoreReply_(data, requestId) {
+  const payload = Object.assign({ source: 'worship-score-api', requestId: String(requestId || '') }, data || {});
   const json = JSON.stringify(payload).replace(/</g, '\\u003c');
   return HtmlService
     .createHtmlOutput('<!doctype html><meta charset="utf-8"><script>window.parent.postMessage(' + json + ', "*");</script>')
