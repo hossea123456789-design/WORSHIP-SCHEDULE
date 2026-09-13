@@ -33,7 +33,7 @@ const WORSHIP_API = Object.freeze({
     ASSIGNMENTS: ['assignment_id', 'event_date', 'role_id', 'member_id', 'sort_order', 'source', 'active', 'updated_at'],
     PRAYER_ORDER: ['position', 'member_id', 'display_name', 'active'],
     ROTATION_BASE: ['base_month', 'event_index', 'role_id', 'member_id', 'sort_order', 'active', 'updated_at'],
-    HOLIDAYS: ['holiday_date', 'holiday_name', 'holiday_type', 'source'],
+    HOLIDAYS: ['holiday_date', 'holiday_name', 'holiday_type'],
     MUTATION_LOG: ['mutation_id', 'client_id', 'mutation_type', 'applied_at']
   })
 });
