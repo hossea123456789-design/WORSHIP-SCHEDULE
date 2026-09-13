@@ -1,0 +1,47 @@
+name: Promote Worship v3.8
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/promote-v38-simple.yml']
+permissions:
+  contents: write
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build v3.8 from verified score-ready frontend
+        run: |
+          cp index_v37_ready.html index.html
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('index.html')
+          s=p.read_text(encoding='utf-8')
+          old='https://script.google.com/macros/s/AKfycby9srJlhi9sWjpMxJSpyhWgkNRP6RwOyVDRyPRsUDDSceflQgnFP9A7yXaGIXGuj9Ad0Q/exec'
+          schedule='https://script.google.com/macros/s/AKfycbwwYV6CBces0jCFTndl9EoKL_LU7P55TJ2eLrT1qCH0aL-XxZggaPClwz4FuZgZ3KulaQ/exec'
+          score='https://script.google.com/macros/s/AKfycbxyjSCotbCTOQ54H3IqutFZM0xQRF-92_bvJWMNcJKWdgqQjGgThiGFBtRmK1LlXObOdQ/exec'
+          s=s.replace("const APP_VERSION='v3.7-ready';","const APP_VERSION='v3.8';",1)
+          s=s.replace(old,schedule)
+          s=s.replace('form.action=API_URL;',"form.action='"+score+"';")
+          p.write_text(s,encoding='utf-8')
+          assert "const APP_VERSION='v3.8';" in s
+          assert schedule in s and score in s
+          assert 'id="scoreUploadBtn"' in s
+          assert 'pending=loadQueue()' in s and 'hardConnectionDown' in s
+          PY
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          s=Path('index.html').read_text(encoding='utf-8')
+          Path('/tmp/v38.js').write_text('\n'.join(re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>',s,re.S|re.I)),encoding='utf-8')
+          PY
+          node --check /tmp/v38.js
+      - name: Commit live v3.8
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          git commit -m 'feat: restore isolated score upload (v3.8)'
+          git push
