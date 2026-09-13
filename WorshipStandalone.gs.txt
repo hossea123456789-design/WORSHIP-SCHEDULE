@@ -230,6 +230,14 @@ function worshipEffectiveMemberIds_(date,roleId,month,monthDates,assignments,rot
 function worshipMutationAlreadyApplied_(ss,mutationId) { const sheet=ss.getSheetByName(WORSHIP_API.SHEETS.MUTATION_LOG); if(!sheet||sheet.getLastRow()<2)return false; const count=Math.min(Math.max(sheet.getLastRow()-1,0),WORSHIP_API.LOG_KEEP); if(!count)return false; const start=sheet.getLastRow()-count+1, values=sheet.getRange(start,1,count,1).getDisplayValues(); return values.some(r=>String(r[0])===mutationId); }
 function worshipAppendMutationLog_(ss,mutationId,clientId,type,now) { const sheet=ss.getSheetByName(WORSHIP_API.SHEETS.MUTATION_LOG); if(!sheet)throw new Error('필수 시트가 없습니다: '+WORSHIP_API.SHEETS.MUTATION_LOG); sheet.appendRow([mutationId,clientId,type,now]); const rows=Math.max(sheet.getLastRow()-1,0); if(rows>WORSHIP_API.LOG_KEEP)sheet.deleteRows(2,rows-WORSHIP_API.LOG_KEEP); }
 function worshipIncrementRevision_(ss,now) { const sheet=ss.getSheetByName(WORSHIP_API.SHEETS.CONFIG); if(!sheet)throw new Error('필수 시트가 없습니다: '+WORSHIP_API.SHEETS.CONFIG); const last=sheet.getLastRow(); if(last>=2){const values=sheet.getRange(2,1,last-1,2).getValues();for(let i=0;i<values.length;i++){if(String(values[i][0])==='STATE_REVISION'){const next=Number(values[i][1]||0)+1;sheet.getRange(i+2,2).setValue(String(next));sheet.getRange(i+2,4).setValue(now);return next;}}} sheet.appendRow(['STATE_REVISION','1','공용 데이터 변경 버전',now]); return 1; }
+function setupWorshipStandalone() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) throw new Error('찬양팀_DB 스프레드시트에서 확장 프로그램 > Apps Script로 연 뒤 실행해주세요.');
+  PropertiesService.getScriptProperties().setProperty(WORSHIP_API.DB_PROP, ss.getId());
+  worshipValidateSchema_(ss);
+  return '연결 완료: ' + ss.getName() + ' / ' + ss.getId();
+}
+
 function setWorshipSpreadsheetId(id) {
   const value = String(id || '').trim();
   if (!value) throw new Error('스프레드시트 ID가 비어 있습니다.');
