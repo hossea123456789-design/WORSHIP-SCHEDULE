@@ -72,7 +72,7 @@ main{padding:15px 15px 36px}.panel{display:none}.panel.active{display:block}.sec
 
 const PLAYLIST_ID='PLDThR_8ShZAFTVEZgp2jtZaha8bThHZXB';
 const STORAGE_PREFIX='worship_fast_v3_';
-const APP_VERSION='v3.5';
+const APP_VERSION='v3.6';
 const BOOTSTRAP_TIMEOUT_MS=25000;
 const MUTATE_TIMEOUT_MS=25000;
 
@@ -90,6 +90,7 @@ let needsFullRefresh=false;
 let readInFlight=false;
 let startupSyncTimer=null;
 let lastHardConnectionToastAt=0;
+let hardConnectionDown=false;
 
 function safeGet(k){try{return localStorage.getItem(STORAGE_PREFIX+k)}catch(e){return null}}
 function safeSet(k,v){try{localStorage.setItem(STORAGE_PREFIX+k,v)}catch(e){}}
@@ -171,7 +172,7 @@ function jsonp(action,params={},timeout=15000,options={}){
     }
 
     window[cb]=data=>finish(null,data);
-    script.onerror=()=>finish(new Error('Apps Script API에 연결하지 못했습니다.'));
+    script.onerror=()=>{logEvent(options.background?'WARN':'ERROR','API_SCRIPT_ERROR',`action=${action} online=${navigator.onLine} host=${new URL(API_URL).host}`);finish(new Error('Apps Script API에 연결하지 못했습니다.'))};
     script.src=API_URL+'?'+q.toString();
     document.head.appendChild(script);
   });
@@ -271,7 +272,7 @@ async function bootstrap(showLoading=true,silentFailure=false){
     return false;
   }finally{
     readInFlight=false;
-    if(pending.length&&!flushing){
+    if(pending.length&&!flushing&&!hardConnectionDown){
       clearTimeout(retryTimer);
       retryTimer=setTimeout(flushQueue,50);
     }
@@ -411,18 +412,19 @@ async function flushQueue(){
     logEvent('ERROR','SAVE_FAIL',`type=${m.type} attempt=${m.attempts} msg=${e&&e.message?e.message:e}`);
 
     if(isHardConnectionError(e)){
-      // Endpoint 자체가 로드되지 않는 상태에서는 즉시 연속 재시도하지 않습니다.
-      // 사용자 변경은 큐에 그대로 보존하고 30초 뒤 재시도합니다.
+      // 서버 진입 자체가 실패한 경우 저장 요청을 반복해서 두드리지 않습니다.
+      // pending은 유지하고 revision 헬스체크가 성공한 뒤에만 저장을 재개합니다.
+      hardConnectionDown=true;
       m.attempts=0;
       saveQueue();
       setProcess('서버 연결 끊김 · 저장 보류','offline');
       const now=Date.now();
       if(now-lastHardConnectionToastAt>15000){
         lastHardConnectionToastAt=now;
-        showToast('서버 연결 끊김 · 저장 내용은 보류 중입니다');
+        showToast('서버 연결 끊김 · 저장 내용은 안전하게 보류 중입니다');
       }
       clearTimeout(retryTimer);
-      retryTimer=setTimeout(flushQueue,30000);
+      retryTimer=null;
       return;
     }
 
@@ -974,8 +976,11 @@ document.querySelectorAll('.navBtn').forEach(b=>b.onclick=()=>{
 });
 
 async function pollRevision(){
-  if(!STATE||pending.length||flushing||readInFlight)return;
-  if(needsFullRefresh){
+  if(!STATE||flushing||readInFlight)return;
+  // 정상 연결 상태에서 저장 대기 중이면 mutate가 우선입니다.
+  // 단, hardConnectionDown 상태에서는 pending이 있어도 revision 헬스체크를 허용합니다.
+  if(pending.length&&!hardConnectionDown)return;
+  if(needsFullRefresh&&!pending.length&&!hardConnectionDown){
     logEvent('INFO','POST_SAVE_REFRESH_RETRY','pending full refresh');
     await bootstrap(false,true);
     return;
@@ -983,23 +988,35 @@ async function pollRevision(){
 
   readInFlight=true;
   let refreshNeeded=false;
+  let recovered=false;
   try{
     const r=await jsonp('revision',{},6000,{background:true});
-    if(r&&r.ok&&Number(r.revision)!==Number(STATE.revision)){
-      logEvent('INFO','REMOTE_CHANGE',`local=${STATE.revision} remote=${r.revision}`);
-      needsFullRefresh=true;
-      refreshNeeded=true;
+    if(r&&r.ok){
+      if(hardConnectionDown){
+        hardConnectionDown=false;
+        recovered=true;
+        clearConnectionError();
+        logEvent('INFO','API_RECOVERED',`revision=${r.revision} pending=${pending.length}`);
+      }
+      if(Number(r.revision)!==Number(STATE.revision)){
+        logEvent('INFO','REMOTE_CHANGE',`local=${STATE.revision} remote=${r.revision}`);
+        needsFullRefresh=true;
+        refreshNeeded=true;
+      }
     }
   }catch(e){
+    if(isHardConnectionError(e))hardConnectionDown=true;
     logEvent('WARN','REVISION_FAIL',e&&e.message?e.message:String(e));
   }finally{
     readInFlight=false;
-    if(pending.length&&!flushing){
-      clearTimeout(retryTimer);
-      retryTimer=setTimeout(flushQueue,50);
-    }
   }
 
+  if(recovered&&pending.length&&!flushing){
+    setProcess('서버 연결 복구 · 저장 재개','working');
+    clearTimeout(retryTimer);
+    retryTimer=setTimeout(flushQueue,80);
+    return;
+  }
   if(refreshNeeded&&!pending.length&&!flushing)await bootstrap(false,true);
 }
 
@@ -1015,8 +1032,9 @@ if(hadCachedState){
   renderAll();
   logEvent('INFO','CACHE_RENDERED',`revision=${STATE.revision}`);
   if(pending.length){
-    setProcess('저장 대기…','working');
-    setTimeout(flushQueue,80);
+    hardConnectionDown=true;
+    setProcess('저장 보류 · 서버 확인 중','working');
+    startupSyncTimer=setTimeout(pollRevision,500);
   }else{
     setProcess('연결 완료','ok');
     startupSyncTimer=setTimeout(pollRevision,1200);
@@ -1030,7 +1048,7 @@ if(hadCachedState){
 renderPlaylist();
 
 pollTimer=setInterval(pollRevision,30000);
-window.addEventListener('online',()=>{logEvent('INFO','NETWORK','online');if(pending.length)flushQueue();else if(STATE)pollRevision();else bootstrap(false)});
+window.addEventListener('online',()=>{logEvent('INFO','NETWORK','online');if(STATE){if(pending.length)hardConnectionDown=true;pollRevision()}else bootstrap(false)});
 window.addEventListener('offline',()=>{logEvent('INFO','NETWORK','offline');setProcess('오프라인','offline')});
 </script>
 </body>
