@@ -24,8 +24,14 @@ jobs:
           test "$(grep -c '^function doPost' WorshipApi_RECOVERY_v35.gs.txt || true)" -eq 0
           test "$(grep -c 'worshipValidateSchema_(ss);' WorshipApi_RECOVERY_v35.gs.txt)" -eq 1
           grep -q 'worshipMonthNum_(x) <= target' WorshipApi_RECOVERY_v35.gs.txt
-          grep -q "case 'rotationComplete'" WorshipApi_RECOVERY_v35.gs.txt
+          grep -q "case 'assignmentSet'" WorshipApi_RECOVERY_v35.gs.txt
+          grep -q "case 'eventSet'" WorshipApi_RECOVERY_v35.gs.txt
           grep -q "case 'memberSave'" WorshipApi_RECOVERY_v35.gs.txt
+          grep -q "case 'memberDelete'" WorshipApi_RECOVERY_v35.gs.txt
+          grep -q "case 'roleSave'" WorshipApi_RECOVERY_v35.gs.txt
+          grep -q "case 'roleDelete'" WorshipApi_RECOVERY_v35.gs.txt
+          grep -q "case 'prayerOrderSet'" WorshipApi_RECOVERY_v35.gs.txt
+          grep -q "case 'rotationComplete'" WorshipApi_RECOVERY_v35.gs.txt
           echo 'WORSHIP API PREFLIGHT OK'
       - name: Commit patch
         run: |
