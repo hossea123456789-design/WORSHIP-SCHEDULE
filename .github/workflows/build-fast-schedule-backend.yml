@@ -1,0 +1,39 @@
+name: Build optimized schedule backend
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/build-fast-schedule-backend.yml']
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build optimized full backend file
+        run: |
+          cp Code.gs.txt Code_FAST.gs.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('Code_FAST.gs.txt')
+          s=p.read_text(encoding='utf-8')
+          old='CACHE_SECONDS: 20,'
+          if old not in s:
+              raise SystemExit('CACHE_SECONDS target not found')
+          s=s.replace(old,'CACHE_SECONDS: 300,',1)
+          s=s.replace('WORSHIP-SCHEDULE standalone Apps Script backend','WORSHIP-SCHEDULE standalone Apps Script backend — optimized cache build',1)
+          p.write_text(s,encoding='utf-8')
+          assert 'CACHE_SECONDS: 300,' in s
+          assert 'SpreadsheetApp' in s
+          assert 'function doGet' in s
+          PY
+      - name: Commit optimized backend
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Code_FAST.gs.txt
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'build: optimized schedule backend cache artifact'
+          git push
