@@ -1,4 +1,4 @@
-name: Worship schedule backend latency optimization
+name: Worship prayer date normalization hotfix
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  optimize:
+  hotfix:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -17,111 +17,70 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Build complete optimized schedule backend
+      - name: Patch prayer date normalization
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
           import re
 
-          src = Path('Code.gs.txt')
-          dst = Path('Code_FAST_SCHEDULE.gs.txt')
-          s = src.read_text(encoding='utf-8')
+          p = Path('index.html')
+          s = p.read_text(encoding='utf-8')
+          s = s.replace('v3.9.2', 'v3.9.3')
 
-          forbidden = ['DriveApp', 'function doPost', 'worship-score', 'handleWorshipScore', 'worshipScore']
-          bad = [x for x in forbidden if x in s]
-          if bad:
-              raise SystemExit('schedule source unexpectedly contains: ' + ', '.join(bad))
+          pattern = re.compile(r"function selectedDates\(mk\)\{.*?\n\}", re.S)
+          replacement = r'''function selectedDates(mk){
+            const map={};
+            defaultSundays(mk).forEach(k=>map[k]=true);
 
-          s = s.replace(
-              '  CACHE_SECONDS: 20,',
-              "  CACHE_SECONDS: 300,\n  REV_CACHE_KEY: 'WORSHIP_REVISION_V1',\n  REV_CACHE_SECONDS: 300,",
-              1
-          )
+            const events=Array.isArray(STATE&&STATE.events)?STATE.events:[];
+            events.forEach(e=>{
+              const raw=String((e&&e.event_date)||'');
+              const match=raw.match(/^(\d{4}-\d{2}-\d{2})/);
+              if(!match)return;
+              const date=match[1];
+              const parsed=new Date(date+'T00:00:00');
+              if(Number.isNaN(parsed.getTime())||keyOf(parsed)!==date)return;
+              if(date.slice(0,7)===mk)map[date]=isActive(e.active);
+            });
 
-          s = s.replace(
-              '  const ss = worshipDb_();\n  worshipValidateSchema_(ss);\n  const configRows = worshipReadTable_(ss, WORSHIP_API.SHEETS.CONFIG).objects;',
-              '  const ss = worshipDb_();\n  const configRows = worshipReadTable_(ss, WORSHIP_API.SHEETS.CONFIG).objects;',
-              1
-          )
-
-          revision = re.compile(r"function worshipGetRevision_\(\) \{.*?\n\}\n\nfunction worshipMutate_", re.S)
-          replacement = '''function worshipGetRevision_() {
-            const cache = CacheService.getScriptCache();
-            try {
-              const cached = cache.get(WORSHIP_API.REV_CACHE_KEY);
-              if (cached !== null && cached !== '') return Number(cached || 1);
-            } catch (_) {}
-
-            const ss = worshipDb_();
-            const sheet = ss.getSheetByName(WORSHIP_API.SHEETS.CONFIG);
-            if (!sheet) throw new Error('필수 시트가 없습니다: ' + WORSHIP_API.SHEETS.CONFIG);
-            const lastRow = sheet.getLastRow();
-            let revision = 1;
-            if (lastRow >= 2) {
-              const rows = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
-              for (let i = 0; i < rows.length; i++) {
-                if (String(rows[i][0]) === 'STATE_REVISION') {
-                  revision = Number(rows[i][1] || 1);
-                  break;
-                }
-              }
-            }
-            try { cache.put(WORSHIP_API.REV_CACHE_KEY, String(revision), WORSHIP_API.REV_CACHE_SECONDS); } catch (_) {}
-            return revision;
-          }
-
-          function worshipMutate_'''
-          s, count = revision.subn(replacement, s, count=1)
+            return Object.keys(map)
+              .filter(k=>map[k]&&/^\d{4}-\d{2}-\d{2}$/.test(k))
+              .sort();
+          }'''
+          s, count = pattern.subn(replacement, s, count=1)
           if count != 1:
-              raise SystemExit('revision function replacement failed')
+              raise SystemExit(f'selectedDates patch count={count}')
 
-          old = '  try { cache.put(WORSHIP_API.CACHE_KEY, JSON.stringify(data), WORSHIP_API.CACHE_SECONDS); } catch (_) {}\n  return { ok: true, data };'
-          new = '''  try {
-            cache.put(WORSHIP_API.CACHE_KEY, JSON.stringify(data), WORSHIP_API.CACHE_SECONDS);
-            cache.put(WORSHIP_API.REV_CACHE_KEY, String(data.revision || 1), WORSHIP_API.REV_CACHE_SECONDS);
-          } catch (_) {}
-          return { ok: true, data };'''
+          # defensive guard: never render invalid dates in prayer list
+          old = "  const dates=upcomingWorshipDates(9);"
+          new = "  const dates=upcomingWorshipDates(9).filter(date=>{const d=new Date(String(date)+'T00:00:00');return /^\\d{4}-\\d{2}-\\d{2}$/.test(String(date))&&!Number.isNaN(d.getTime())&&keyOf(d)===String(date)});"
           if old not in s:
-              raise SystemExit('bootstrap cache replacement target missing')
+              raise SystemExit('renderPrayer date guard target missing')
           s = s.replace(old, new, 1)
 
-          old = '    CacheService.getScriptCache().remove(WORSHIP_API.CACHE_KEY);\n    return { ok:true, revision, structural };'
-          new = '''    const scriptCache = CacheService.getScriptCache();
-            scriptCache.remove(WORSHIP_API.CACHE_KEY);
-            try { scriptCache.put(WORSHIP_API.REV_CACHE_KEY, String(revision), WORSHIP_API.REV_CACHE_SECONDS); } catch (_) {}
-            return { ok:true, revision, structural };'''
-          if old not in s:
-              raise SystemExit('mutation cache replacement target missing')
-          s = s.replace(old, new, 1)
-
-          s = s.replace(' * - POST: 악보 meta / uploadStart / uploadChunk / delete\n', ' * - 일정 전용: Drive/악보 업로드 코드 없음\n', 1)
-          s = s.replace('WORSHIP-SCHEDULE standalone Apps Script backend', 'WORSHIP-SCHEDULE standalone Apps Script backend - optimized schedule-only', 1)
-
-          for marker in ['CACHE_SECONDS: 300', 'REV_CACHE_KEY', 'REV_CACHE_SECONDS: 300']:
-              if marker not in s:
-                  raise SystemExit('missing optimization marker: ' + marker)
-          bad = [x for x in forbidden if x in s]
-          if bad:
-              raise SystemExit('optimized file contains forbidden code: ' + ', '.join(bad))
-
-          dst.write_text(s, encoding='utf-8')
+          p.write_text(s, encoding='utf-8')
           PY
 
-          cp Code_FAST_SCHEDULE.gs.txt /tmp/code_fast_schedule.js
-          node --check /tmp/code_fast_schedule.js
-          ! grep -q 'DriveApp' Code_FAST_SCHEDULE.gs.txt
-          ! grep -q 'function doPost' Code_FAST_SCHEDULE.gs.txt
-          ! grep -q 'worship-score' Code_FAST_SCHEDULE.gs.txt
-          grep -q 'CACHE_SECONDS: 300' Code_FAST_SCHEDULE.gs.txt
-          grep -q 'REV_CACHE_KEY' Code_FAST_SCHEDULE.gs.txt
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          s=Path('index.html').read_text(encoding='utf-8')
+          scripts=re.findall(r'<script>(.*?)</script>',s,re.S)
+          if not scripts: raise SystemExit('script block missing')
+          Path('/tmp/worship-app.js').write_text('\n'.join(scripts),encoding='utf-8')
+          PY
+          node --check /tmp/worship-app.js
+          grep -q 'v3.9.3' index.html
+          grep -q 'const match=raw.match' index.html
+          grep -q 'Number.isNaN(parsed.getTime())' index.html
 
-      - name: Commit optimized full replacement file
+      - name: Commit hotfix
         shell: bash
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add Code_FAST_SCHEDULE.gs.txt
+          git add index.html
           git diff --cached --quiet && exit 0
-          git commit -m 'build optimized schedule-only Apps Script backend'
+          git commit -m 'fix phantom prayer row from stale ISO dates'
           git push
