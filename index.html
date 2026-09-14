@@ -43,10 +43,15 @@ main{padding:15px 15px 36px}.panel{display:none}.panel.active{display:block}.sec
 .toast{position:fixed;left:50%;bottom:calc(116px + env(safe-area-inset-bottom));z-index:120;transform:translate(-50%,15px);opacity:0;max-width:calc(100vw - 24px);background:#171a2b;color:#fff;border-radius:999px;padding:9px 12px;font-size:10px;font-weight:900;transition:.2s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}.toast.show{opacity:1;transform:translate(-50%,0)}.sync{position:fixed;right:12px;bottom:93px;z-index:60;background:#fff;border:1px solid var(--line);border-radius:999px;padding:6px 8px;font-size:8px;color:var(--muted);box-shadow:0 4px 14px rgba(15,23,42,.08);display:none}
 @media(min-width:640px){main{padding:19px}.roleCol{min-width:135px;max-width:135px}.weekRole{grid-template-columns:150px 1fr}.pickGrid{grid-template-columns:repeat(3,1fr)}}
 
-.scorePreview{height:78vh;min-height:560px}
-.scorePreview:fullscreen,.scorePreview:-webkit-full-screen{width:100vw;height:100vh;min-height:100vh;border:0;border-radius:0;background:#111}
+.scorePreview{height:min(52vh,560px);min-height:320px;background:#f6f7fa}
+.scorePreview.collapsed{height:0!important;min-height:0!important;margin-top:0!important;border-width:0!important;overflow:hidden!important}
+.scoreImagePreview{height:auto!important;min-height:0!important;max-height:none!important;background:#fff;padding:8px;overflow:hidden}
+.scoreImagePreview img{display:block;width:100%;height:auto;max-height:none;object-fit:contain;background:#fff;border-radius:10px;cursor:zoom-in;touch-action:manipulation}
+.scorePreview:fullscreen,.scorePreview:-webkit-full-screen{width:100vw;height:100vh!important;min-height:100vh!important;border:0;border-radius:0;background:#111}
 .scorePreview:fullscreen iframe,.scorePreview:-webkit-full-screen iframe{width:100%;height:100%}
-@media(max-width:520px){.scorePreview{height:70vh;min-height:480px}.scoreMeta{align-items:flex-start;flex-direction:column}.scoreActions{width:100%}.scoreActions .ghostBtn{flex:1;justify-content:center}}
+.scoreImagePreview:fullscreen,.scoreImagePreview:-webkit-full-screen{display:flex;align-items:center;justify-content:center;padding:0;overflow:auto;background:#111}
+.scoreImagePreview:fullscreen img,.scoreImagePreview:-webkit-full-screen img{width:auto;height:auto;max-width:100%;max-height:100%;object-fit:contain;border-radius:0;touch-action:pinch-zoom}
+@media(max-width:520px){.scorePreview{height:46vh;min-height:300px}.scoreImagePreview{height:auto!important;min-height:0!important}.scoreMeta{align-items:flex-start;flex-direction:column}.scoreActions{width:100%}.scoreActions .ghostBtn{flex:1;justify-content:center}}
 </style>
 </head>
 <body>
@@ -79,7 +84,7 @@ main{padding:15px 15px 36px}.panel{display:none}.panel.active{display:block}.sec
 
 const PLAYLIST_ID='PLDThR_8ShZAFTVEZgp2jtZaha8bThHZXB';
 const STORAGE_PREFIX='worship_fast_v3_';
-const APP_VERSION='v3.10.0';
+const APP_VERSION='v3.11.0';
 const BOOTSTRAP_TIMEOUT_MS=25000;
 const MUTATE_TIMEOUT_MS=25000;
 
@@ -894,14 +899,27 @@ function hideScoreProgress(delay=0){
 }
 
 function openScoreFullscreen(){
-  const box=document.querySelector('.scorePreview');
+  const box=document.querySelector('#scoreArea .scorePreview');
   if(!box)return;
+  if(box.classList.contains('collapsed')){
+    box.classList.remove('collapsed');
+    const toggle=document.getElementById('scoreTogglePreview');
+    if(toggle)toggle.textContent='미리보기 접기';
+  }
   const fn=box.requestFullscreen||box.webkitRequestFullscreen;
   if(fn){
     try{fn.call(box)}catch(e){showToast('전체화면을 열지 못했습니다')}
   }else if(SCORE_META&&SCORE_META.previewUrl){
     window.open(SCORE_META.previewUrl,'_blank','noopener');
   }
+}
+
+function toggleScorePreview(){
+  const box=document.querySelector('#scoreArea .scorePreview');
+  const btn=document.getElementById('scoreTogglePreview');
+  if(!box||!btn)return;
+  const collapsed=box.classList.toggle('collapsed');
+  btn.textContent=collapsed?'미리보기 펼치기':'미리보기 접기';
 }
 
 function renderScore(){
@@ -918,8 +936,16 @@ function renderScore(){
 
   const f=SCORE_META;
   const id=String(f.id||'');
+  const fileName=String(f.name||'악보');
+  const ext=(fileName.split('.').pop()||'').toLowerCase();
+  const isImage=['jpg','jpeg','png','webp'].includes(ext);
   const downloadUrl=id?`https://drive.google.com/uc?export=download&id=${encodeURIComponent(id)}`:(f.openUrl||'#');
-  area.innerHTML=`<div class="scoreMeta"><div><div class="scoreName">${escapeHtml(f.name||'악보')}</div><div class="scoreSub">${escapeHtml(f.updatedAt||'')}${f.size?` · ${formatBytes(f.size)}`:''}</div></div><div class="scoreActions"><a class="ghostBtn" style="text-decoration:none;display:inline-flex;align-items:center" href="${escapeHtml(downloadUrl)}" target="_blank" rel="noopener">다운로드</a><a class="ghostBtn" style="text-decoration:none;display:inline-flex;align-items:center" href="${escapeHtml(f.openUrl||'#')}" target="_blank" rel="noopener">새 창</a><button class="ghostBtn" type="button" onclick="openScoreFullscreen()">전체화면</button></div></div><div class="scorePreview"><iframe src="${escapeHtml(f.previewUrl||'')}" title="악보 미리보기" loading="lazy" allow="fullscreen"></iframe></div>`;
+  const imageUrl=id?`https://drive.google.com/thumbnail?id=${encodeURIComponent(id)}&sz=w2400`:'';
+  const previewHtml=(isImage&&imageUrl)
+    ?`<div class="scorePreview scoreImagePreview"><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(fileName)}" loading="lazy" onclick="openScoreFullscreen()"></div>`
+    :`<div class="scorePreview"><iframe src="${escapeHtml(f.previewUrl||'')}" title="악보 미리보기" loading="lazy" allow="fullscreen"></iframe></div>`;
+
+  area.innerHTML=`<div class="scoreMeta"><div><div class="scoreName">${escapeHtml(fileName)}</div><div class="scoreSub">${escapeHtml(f.updatedAt||'')}${f.size?` · ${formatBytes(f.size)}`:''}</div></div><div class="scoreActions"><a class="ghostBtn" style="text-decoration:none;display:inline-flex;align-items:center" href="${escapeHtml(downloadUrl)}" target="_blank" rel="noopener">다운로드</a><a class="ghostBtn" style="text-decoration:none;display:inline-flex;align-items:center" href="${escapeHtml(f.openUrl||'#')}" target="_blank" rel="noopener">새 창</a><button class="ghostBtn" id="scoreTogglePreview" type="button" onclick="toggleScorePreview()">미리보기 접기</button><button class="ghostBtn" type="button" onclick="openScoreFullscreen()">전체화면</button></div></div>${previewHtml}`;
 }
 function scorePost(action,fields={},timeoutMs=45000){
   const requestId='score_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2);
