@@ -79,7 +79,7 @@ main{padding:15px 15px 36px}.panel{display:none}.panel.active{display:block}.sec
 
 const PLAYLIST_ID='PLDThR_8ShZAFTVEZgp2jtZaha8bThHZXB';
 const STORAGE_PREFIX='worship_fast_v3_';
-const APP_VERSION='v3.9.2';
+const APP_VERSION='v3.10.0';
 const BOOTSTRAP_TIMEOUT_MS=25000;
 const MUTATE_TIMEOUT_MS=25000;
 
@@ -109,6 +109,23 @@ function escapeHtml(s){return String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'
 function pad(n){return String(n).padStart(2,'0')}
 function keyOf(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())}
 function monthKey(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)}
+function normalizeDateKey(v){
+  if(v==null||v==='')return'';
+  if(v instanceof Date&&!isNaN(v))return keyOf(v);
+  const s=String(v).trim();
+  const m=s.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/);
+  if(m)return `${m[1]}-${pad(m[2])}-${pad(m[3])}`;
+  return /^\d{4}-\d{2}-\d{2}$/.test(s)?s:'';
+}
+function normalizeMonthKey(v){
+  if(v==null||v==='')return'';
+  if(v instanceof Date&&!isNaN(v))return monthKey(v);
+  const s=String(v).trim();
+  const m=s.match(/^(\d{4})[-\/.](\d{1,2})/);
+  if(m)return `${m[1]}-${pad(m[2])}`;
+  return /^\d{4}-\d{2}$/.test(s)?s:'';
+}
+function addMonths(d,n){return new Date(d.getFullYear(),d.getMonth()+n,1)}
 function addDays(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x}
 function sundayOfWeek(d){const x=new Date(d.getFullYear(),d.getMonth(),d.getDate());x.setDate(x.getDate()-x.getDay());return x}
 function isActive(v){return v===true||String(v).toLowerCase()==='true'||String(v)==='1'}
@@ -224,8 +241,41 @@ function eligibleMembers(roleId){
 }
 function holidayMap(){
   const out={};
-  STATE.holidays.forEach(h=>out[String(h.holiday_date)]={name:String(h.holiday_name||''),type:String(h.holiday_type||'')});
+  STATE.holidays.forEach(h=>{
+    const k=normalizeDateKey(h&&h.holiday_date);
+    if(k)out[k]={name:String(h.holiday_name||''),type:String(h.holiday_type||'')};
+  });
   return out;
+}
+
+function horizonStartMonth(){
+  const d=new Date(currentTodayKey()+'T00:00:00');
+  return new Date(d.getFullYear(),d.getMonth(),1);
+}
+function horizonEndMonth(){return addMonths(horizonStartMonth(),12)}
+function horizonEndKey(){return monthKey(horizonEndMonth())}
+function isBeyondHorizon(mk){return monthNum(mk)>monthNum(horizonEndKey())}
+
+let syncProgressTimer=null;
+function stopSyncProgress(){if(syncProgressTimer){clearInterval(syncProgressTimer);syncProgressTimer=null}}
+function setSyncProgress(pct,label,cached=!!STATE){
+  const p=Math.max(0,Math.min(100,Math.round(Number(pct)||0)));
+  const prefix=cached?'캐시 데이터 표시 · ':'';
+  setProcess(`${prefix}동기화 ${p}% · ${label}`,p>=100?'ok':'working');
+}
+function startSyncProgress(cached=!!STATE){
+  stopSyncProgress();
+  const started=performance.now();
+  setSyncProgress(cached?8:5,cached?'서버 최신 데이터 확인':'서버 연결 준비',cached);
+  syncProgressTimer=setInterval(()=>{
+    const sec=(performance.now()-started)/1000;
+    let pct,label;
+    if(sec<1){pct=cached?18:15;label='서버 요청 전송'}
+    else if(sec<3){pct=35+sec*7;label='서버 응답 대기'}
+    else if(sec<7){pct=56+(sec-3)*5;label='일정 데이터 동기화'}
+    else{pct=Math.min(88,76+(sec-7)*2);label='서버 처리 완료 대기'}
+    setSyncProgress(pct,label,cached);
+  },500);
 }
 
 async function bootstrap(showLoading=true,silentFailure=false){
@@ -241,27 +291,35 @@ async function bootstrap(showLoading=true,silentFailure=false){
 
   readInFlight=true;
   const started=performance.now();
+  const hadState=!!STATE;
   if(!silentFailure){
-    setProcess(STATE?'동기화 중…':'연결 중…','working');
+    startSyncProgress(hadState);
     clearConnectionError();
   }
-  logEvent('INFO',silentFailure?'BOOTSTRAP_BG_START':'BOOTSTRAP_START',`cached=${!!STATE}`);
+  logEvent('INFO',silentFailure?'BOOTSTRAP_BG_START':'BOOTSTRAP_START',`cached=${hadState}`);
 
   try{
     const res=await jsonp('bootstrap',{},BOOTSTRAP_TIMEOUT_MS,{background:silentFailure});
     if(!res||!res.ok)throw new Error((res&&res.error)||'초기 데이터를 불러오지 못했습니다.');
 
+    if(!silentFailure)setSyncProgress(92,'서버 응답 수신',hadState);
     STATE=res.data;
     pending.forEach(applyOptimistic);
+    if(!silentFailure)setSyncProgress(96,'로컬 캐시 갱신',hadState);
     cacheState();
     needsFullRefresh=false;
 
     const today=new Date((STATE.serverToday||keyOf(new Date()))+'T00:00:00');
     if(!viewMonth)viewMonth=new Date(today.getFullYear(),today.getMonth(),1);
 
+    if(!silentFailure)setSyncProgress(99,'화면 갱신',hadState);
     renderAll();
     clearConnectionError();
-    if(!silentFailure||['동기화 중…','연결 중…','오프라인','동기화 실패 · 캐시 사용'].includes(processStatus)){
+    if(!silentFailure){
+      stopSyncProgress();
+      setSyncProgress(100,'최신 데이터 반영 완료',false);
+      setTimeout(()=>{if(!readInFlight&&!flushing&&!pending.length)setProcess('연결 완료','ok')},900);
+    }else if(['동기화 중…','연결 중…','오프라인','동기화 실패 · 캐시 사용'].includes(processStatus)){
       setProcess('연결 완료','ok');
     }
     logEvent('INFO',silentFailure?'BOOTSTRAP_BG_OK':'BOOTSTRAP_OK',`ms=${Math.round(performance.now()-started)} revision=${STATE.revision}`);
@@ -281,6 +339,7 @@ async function bootstrap(showLoading=true,silentFailure=false){
     }
     return false;
   }finally{
+    if(!silentFailure&&readInFlight&&processStatus.includes('동기화'))stopSyncProgress();
     readInFlight=false;
     if(pending.length&&!flushing&&!hardConnectionDown){
       clearTimeout(retryTimer);
@@ -467,15 +526,16 @@ function defaultSundays(mk){
 }
 
 function selectedDates(mk){
+  if(isBeyondHorizon(mk))return[];
   const map={};
   defaultSundays(mk).forEach(k=>map[k]=true);
 
   STATE.events.forEach(e=>{
-    const date=String(e.event_date||'');
-    if(date.slice(0,7)===mk)map[date]=isActive(e.active);
+    const date=normalizeDateKey(e&&e.event_date);
+    if(date&&date.slice(0,7)===mk)map[date]=isActive(e.active);
   });
 
-  return Object.keys(map).filter(k=>map[k]).sort();
+  return Object.keys(map).filter(k=>map[k]&&/^\d{4}-\d{2}-\d{2}$/.test(k)).sort();
 }
 
 function monthNum(mk){
@@ -484,11 +544,12 @@ function monthNum(mk){
 }
 
 function latestBase(mk){
+  if(isBeyondHorizon(mk))return'';
   const target=monthNum(mk);
   const months=[...new Set(
     STATE.rotationBase
       .filter(r=>isActive(r.active))
-      .map(r=>String(r.base_month||''))
+      .map(r=>normalizeMonthKey(r&&r.base_month))
       .filter(x=>/^\d{4}-\d{2}$/.test(x)&&monthNum(x)<=target)
   )].sort((a,b)=>monthNum(a)-monthNum(b));
 
@@ -497,7 +558,7 @@ function latestBase(mk){
 
 function explicitAssignments(date,roleId){
   return STATE.assignments
-    .filter(a=>isActive(a.active)&&String(a.event_date)===date&&String(a.role_id)===String(roleId))
+    .filter(a=>isActive(a.active)&&normalizeDateKey(a.event_date)===date&&String(a.role_id)===String(roleId))
     .sort((a,b)=>Number(a.sort_order||0)-Number(b.sort_order||0));
 }
 
@@ -517,8 +578,9 @@ function effectiveMemberIds(date,roleId){
 
   const indices=[...new Set(
     STATE.rotationBase
-      .filter(r=>isActive(r.active)&&String(r.base_month)===base)
+      .filter(r=>isActive(r.active)&&normalizeMonthKey(r.base_month)===base)
       .map(r=>Number(r.event_index||0))
+      .filter(n=>Number.isFinite(n)&&n>0)
   )].sort((a,b)=>a-b);
 
   if(!indices.length)return[];
@@ -528,7 +590,7 @@ function effectiveMemberIds(date,roleId){
   return STATE.rotationBase
     .filter(r=>
       isActive(r.active)&&
-      String(r.base_month)===base&&
+      normalizeMonthKey(r.base_month)===base&&
       Number(r.event_index||0)===patternIndex&&
       String(r.role_id)===String(roleId)
     )
@@ -573,9 +635,11 @@ function upcomingWorshipDates(count=2){
   const start=new Date(today+'T00:00:00');
   const out=[];
   let y=start.getFullYear(),m=start.getMonth();
+  const end=horizonEndKey();
 
-  for(let step=0;step<18&&out.length<count;step++){
+  for(let step=0;step<=12&&out.length<count;step++){
     const mk=`${y}-${String(m+1).padStart(2,'0')}`;
+    if(monthNum(mk)>monthNum(end))break;
     selectedDates(mk).forEach(date=>{
       if(date>=today&&!out.includes(date))out.push(date);
     });
@@ -592,10 +656,10 @@ function renderAll(){
   STATE.roles=Array.isArray(STATE.roles)?STATE.roles.filter(Boolean):[];
   STATE.members=Array.isArray(STATE.members)?STATE.members.filter(Boolean):[];
   STATE.memberRoles=Array.isArray(STATE.memberRoles)?STATE.memberRoles.filter(Boolean):[];
-  STATE.events=Array.isArray(STATE.events)?STATE.events.filter(Boolean):[];
-  STATE.assignments=Array.isArray(STATE.assignments)?STATE.assignments.filter(Boolean):[];
-  STATE.rotationBase=Array.isArray(STATE.rotationBase)?STATE.rotationBase.filter(Boolean):[];
-  STATE.holidays=Array.isArray(STATE.holidays)?STATE.holidays.filter(Boolean):[];
+  STATE.events=Array.isArray(STATE.events)?STATE.events.filter(Boolean).map(x=>({...x,event_date:normalizeDateKey(x.event_date)||x.event_date})):[];
+  STATE.assignments=Array.isArray(STATE.assignments)?STATE.assignments.filter(Boolean).map(x=>({...x,event_date:normalizeDateKey(x.event_date)||x.event_date})):[];
+  STATE.rotationBase=Array.isArray(STATE.rotationBase)?STATE.rotationBase.filter(Boolean).map(x=>({...x,base_month:normalizeMonthKey(x.base_month)||x.base_month})):[];
+  STATE.holidays=Array.isArray(STATE.holidays)?STATE.holidays.filter(Boolean).map(x=>({...x,holiday_date:normalizeDateKey(x.holiday_date)||x.holiday_date})):[];
   [['header',renderHeader],['week',renderWeek],['month',renderMonth],['prayer',renderPrayer],['playlist',renderPlaylist],['settings',renderSettings]].forEach(([name,fn])=>{
     try{fn()}catch(e){try{logEvent('ERROR','RENDER_SECTION_FAIL',`section=${name} msg=${e&&e.message?e.message:e}`)}catch(_){}}
   });
@@ -651,7 +715,15 @@ function renderMonth(){
   const hol=holidayMap();
   const base=latestBase(mk);
 
+  if(isBeyondHorizon(mk)){
+    viewMonth=horizonEndMonth();
+    return renderMonth();
+  }
   document.getElementById('monthTitle').textContent=`${y}년 ${m}월`;
+  const prevBtn=document.getElementById('prevMonth');
+  const nextBtn=document.getElementById('nextMonth');
+  if(prevBtn)prevBtn.disabled=false;
+  if(nextBtn){nextBtn.disabled=monthNum(mk)>=monthNum(horizonEndKey());nextBtn.title=nextBtn.disabled?'현재 기준 12개월까지만 자동 편성됩니다.':'';}
   const completeBtn=document.getElementById('completeMonth');
   const rotationSaving=pending.some(x=>x.type==='rotationComplete'&&String((x.payload||{}).month)===mk);
   completeBtn.disabled=rotationSaving;
@@ -659,8 +731,9 @@ function renderMonth(){
   document.getElementById('monthEdit').classList.toggle('on',monthEdit);
   document.getElementById('monthEdit').textContent=monthEdit?'편집중':'편집';
   document.getElementById('rotationTitle').textContent=base?`${base.replace('-','년 ')}월 로테이션 적용 중`:'로테이션 기준 없음';
-  document.getElementById('rotationDesc').textContent='';
-  document.getElementById('matrixInfo').textContent='';
+  document.getElementById('rotationDesc').textContent=base?`자동 적용 범위 · ${horizonEndKey().replace('-','년 ')}월까지`:`기준 월에서 편성 완료를 누르면 이후 월에 자동 적용됩니다.`;
+  document.getElementById('matrixInfo').textContent=`자동 편성 표시 범위: 현재 월부터 ${horizonEndKey().replace('-','년 ')}월까지`;
+
 
   if(!dates.length){
     document.getElementById('matrixArea').innerHTML='<div class="info" style="margin:15px">선택된 찬양 일정이 없습니다.</div>';
@@ -1239,7 +1312,12 @@ document.getElementById('prevMonth').onclick=()=>{
   renderMonth();
 };
 document.getElementById('nextMonth').onclick=()=>{
-  viewMonth=new Date(viewMonth.getFullYear(),viewMonth.getMonth()+1,1);
+  const next=new Date(viewMonth.getFullYear(),viewMonth.getMonth()+1,1);
+  if(monthNum(monthKey(next))>monthNum(horizonEndKey())){
+    showToast(`자동 편성은 ${horizonEndKey().replace('-','년 ')}월까지 표시됩니다`);
+    return;
+  }
+  viewMonth=next;
   renderMonth();
 };
 document.getElementById('monthEdit').onclick=()=>{
@@ -1346,8 +1424,8 @@ if(hadCachedState){
     setProcess('저장 보류 · 서버 확인 중','working');
     startupSyncTimer=setTimeout(pollRevision,500);
   }else{
-    setProcess('연결 완료','ok');
-    startupSyncTimer=setTimeout(pollRevision,1200);
+    setProcess('캐시 데이터 표시 · 동기화 8% · 서버 최신 데이터 확인','working');
+    startupSyncTimer=setTimeout(()=>bootstrap(false,false),180);
   }
 }else{
   viewMonth=new Date(localNow.getFullYear(),localNow.getMonth(),1);
