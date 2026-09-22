@@ -1,0 +1,49 @@
+name: Probe Worship Score API
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/probe-score-api.yml']
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe current score deployment
+        run: |
+          python3 - <<'PY'
+          import json,re,urllib.parse,urllib.request
+
+          base='https://script.google.com/macros/s/AKfycbxyjSCotbCTOQ54H3IqutFZM0xQRF-92_bvJWMNcJKWdgqQjGgThiGFBtRmK1LlXObOdQ/exec'
+
+          def get_health():
+              q=urllib.parse.urlencode({'action':'health','callback':'probeCb','_':'probe'})
+              with urllib.request.urlopen(base+'?'+q,timeout=30) as r:
+                  body=r.read().decode('utf-8','replace')
+              print('GET_HEALTH_BODY=',body[:2000])
+              m=re.fullmatch(r'\s*probeCb\((.*)\);?\s*',body,re.S)
+              if not m:
+                  raise SystemExit('GET health is not JSONP')
+              data=json.loads(m.group(1))
+              if data.get('ok') is not True or data.get('service')!='worship-score':
+                  raise SystemExit('GET health failed: '+repr(data))
+
+          def post(action,request_id):
+              payload=urllib.parse.urlencode({
+                  'app':'worship-score',
+                  'action':action,
+                  'requestId':request_id
+              }).encode()
+              req=urllib.request.Request(
+                  base,data=payload,method='POST',
+                  headers={
+                    'User-Agent':'Mozilla/5.0',
+                    'Content-Type':'application/x-www-form-urlencoded'
+                  })
+              with urllib.request.urlopen(req,timeout=30) as r:
+                  body=r.read().decode('utf-8','replace')
+              print('POST_'+action.upper()+'_BODY=',body[:3000])
+              return body
+
+          get_health()
+          post('health','probe_health')
+          post('meta','probe_meta')
+          PY
