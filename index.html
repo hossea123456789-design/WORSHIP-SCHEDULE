@@ -84,7 +84,7 @@ main{padding:15px 15px 36px}.panel{display:none}.panel.active{display:block}.sec
 
 const PLAYLIST_ID='PLDThR_8ShZAFTVEZgp2jtZaha8bThHZXB';
 const STORAGE_PREFIX='worship_fast_v3_';
-const APP_VERSION='v3.12.2';
+const APP_VERSION='v3.12.3';
 const BOOTSTRAP_TIMEOUT_MS=25000;
 const MUTATE_TIMEOUT_MS=25000;
 
@@ -1109,6 +1109,23 @@ function blobToBase64(blob){
 
 function waitMs(ms){return new Promise(resolve=>setTimeout(resolve,ms))}
 
+async function ensureScoreApiReady(){
+  try{
+    const res=await scorePost('health',{},15000);
+    const caps=Array.isArray(res&&res.capabilities)?res.capabilities:[];
+    const required=['meta','uploadDirect','uploadStart','uploadChunk'];
+    const missing=required.filter(x=>!caps.includes(x));
+    if(!res||res.service!=='worship-score'||missing.length){
+      throw new Error('악보 서버가 현재 앱 버전과 맞지 않습니다.');
+    }
+    logEvent('INFO','SCORE_API_READY',`version=${res.version||''} caps=${caps.join(',')}`);
+    return res;
+  }catch(e){
+    const msg=e&&e.message?e.message:String(e);
+    throw new Error('악보 서버 초기 설정/배포를 확인해주세요: '+msg);
+  }
+}
+
 async function scoreChunkPostWithRetry(fields){
   let lastError=null;
   for(let attempt=1;attempt<=3;attempt++){
@@ -1153,9 +1170,11 @@ async function uploadScoreFile(file){
   const startedAt=performance.now();
   let uploaded=0;
   updateScoreProgress(0,file.size,startedAt,'업로드 준비 중');
-  setScoreStatus('Drive 업로드 준비 중…','working');
+  setScoreStatus('악보 서버 확인 중…','working');
 
   try{
+    await ensureScoreApiReady();
+    setScoreStatus('Drive 업로드 준비 중…','working');
     // 대부분의 악보는 몇 MB 이하여서 복잡한 resumable 과정을 거치지 않는 직접 저장이 더 안정적입니다.
     if(file.size<=4*1024*1024){
       updateScoreProgress(Math.max(1,Math.floor(file.size*0.08)),file.size,startedAt,'파일 읽는 중…');
