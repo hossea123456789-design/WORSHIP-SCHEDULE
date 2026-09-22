@@ -1,8 +1,8 @@
 /**
- * WORSHIP_SCORE_API v3.12.5
+ * WORSHIP_SCORE_API v3.12.6
  * 찬양팀 악보 전용 standalone Apps Script backend
  *
- * 현재 프런트(v3.12.5) 계약:
+ * 현재 프런트(v3.12.6) 계약:
  * - POST app=worship-score
  * - action=health | meta | uploadDirect | uploadStart | uploadChunk | delete
  * - 모든 POST 응답은 iframe postMessage bridge로 requestId를 그대로 돌려줌
@@ -16,7 +16,12 @@
  * - https://www.googleapis.com/auth/script.external_request
  */
 
-const SCORE_API_VERSION = 'v3.12.5';
+const SCORE_API_VERSION = 'v3.12.6';
+
+const SCORE_REQUIRED_SCOPES = Object.freeze([
+  'https://www.googleapis.com/auth/drive',
+  'https://www.googleapis.com/auth/script.external_request'
+]);
 
 const SCORE_STORE = Object.freeze({
   APP: 'worship-score',
@@ -35,10 +40,13 @@ const SCORE_STORE = Object.freeze({
 
 function resetScoreAuthorization() {
   ScriptApp.invalidateAuth();
-  return '기존 Apps Script 권한을 초기화했습니다. 편집기를 새로고침한 뒤 setupScoreStandalone을 실행하고 모든 요청 권한을 허용해주세요.';
+  return '기존 Apps Script 권한을 초기화했습니다. 편집기를 새로고침한 뒤 setupScoreStandalone을 실행해주세요. 누락된 권한은 setupScoreStandalone이 자동으로 요청합니다.';
 }
 
 function setupScoreStandalone() {
+  // Apps Script IDE에서 실행하면 누락된 세부 OAuth 동의를 자동으로 요청합니다.
+  ScriptApp.requireScopes(ScriptApp.AuthMode.FULL, SCORE_REQUIRED_SCOPES);
+
   const folder = getScoreFolder_(true);
   const rootName = DriveApp.getRootFolder().getName();
 
