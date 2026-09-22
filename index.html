@@ -84,7 +84,7 @@ main{padding:15px 15px 36px}.panel{display:none}.panel.active{display:block}.sec
 
 const PLAYLIST_ID='PLDThR_8ShZAFTVEZgp2jtZaha8bThHZXB';
 const STORAGE_PREFIX='worship_fast_v3_';
-const APP_VERSION='v3.12.1';
+const APP_VERSION='v3.12.2';
 const BOOTSTRAP_TIMEOUT_MS=25000;
 const MUTATE_TIMEOUT_MS=25000;
 
@@ -1027,6 +1027,8 @@ function renderScore(){
 }
 function scorePost(action,fields={},timeoutMs=45000){
   const requestId='score_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2);
+  const started=performance.now();
+  logEvent('INFO','SCORE_API_START',`action=${action}`);
   return new Promise((resolve,reject)=>{
     const iframe=document.createElement('iframe');
     iframe.name='scoreFrame_'+requestId;
@@ -1051,7 +1053,22 @@ function scorePost(action,fields={},timeoutMs=45000){
 
     let done=false;
     const cleanup=()=>{window.removeEventListener('message',onMessage);clearTimeout(timer);form.remove();iframe.remove()};
-    const finish=(err,data)=>{if(done)return;done=true;cleanup();err?reject(err):resolve(data)};
+    const finish=(err,data)=>{
+      if(done)return;
+      done=true;
+      cleanup();
+      const ms=Math.round(performance.now()-started);
+      if(err){
+        logEvent('ERROR','SCORE_API_FAIL',`action=${action} ms=${ms} msg=${err&&err.message?err.message:err}`);
+        reject(err);
+      }else{
+        const detail=data&&typeof data==='object'
+          ?`action=${action} ms=${ms} complete=${!!data.complete} transport=${data.transport||''} received=${data.receivedBytes||''}`
+          :`action=${action} ms=${ms}`;
+        logEvent('INFO','SCORE_API_OK',detail);
+        resolve(data);
+      }
+    };
     const onMessage=event=>{
       const msg=event.data||{};
       if(msg.source!=='worship-score-api'||msg.requestId!==requestId)return;
@@ -1139,6 +1156,53 @@ async function uploadScoreFile(file){
   setScoreStatus('Drive 업로드 준비 중…','working');
 
   try{
+    // 대부분의 악보는 몇 MB 이하여서 복잡한 resumable 과정을 거치지 않는 직접 저장이 더 안정적입니다.
+    if(file.size<=4*1024*1024){
+      updateScoreProgress(Math.max(1,Math.floor(file.size*0.08)),file.size,startedAt,'파일 읽는 중…');
+      const directBase64=await blobToBase64(file);
+      updateScoreProgress(Math.max(1,Math.floor(file.size*0.25)),file.size,startedAt,'Drive에 직접 저장 중…');
+      try{
+        const directRes=await scorePost('uploadDirect',{
+          fileName:file.name,
+          mimeType:file.type||'',
+          totalSize:file.size,
+          dataBase64:directBase64
+        },60000);
+        if(directRes&&directRes.complete&&directRes.file){
+          SCORE_META=directRes.file;
+          updateScoreProgress(file.size,file.size,startedAt,'업로드 완료');
+          renderScore();
+          setScoreStatus(directRes.warning?'업로드 완료 · '+directRes.warning:'업로드 완료');
+          showToast('악보를 교체했습니다');
+          hideScoreProgress(1800);
+          return;
+        }
+        throw new Error('직접 저장 완료 응답을 받지 못했습니다.');
+      }catch(directErr){
+        logEvent('WARN','SCORE_DIRECT_RECOVERY',directErr&&directErr.message?directErr.message:String(directErr));
+        // 응답만 놓친 경우 새 파일이 이미 저장됐을 수 있으므로 meta로 먼저 복구합니다.
+        try{
+          const metaRes=await scorePost('meta',{},15000);
+          const recovered=metaRes&&metaRes.file;
+          if(recovered&&String(recovered.name||'')===String(file.name||'')&&Number(recovered.size||0)===Number(file.size||0)){
+            SCORE_META=recovered;
+            updateScoreProgress(file.size,file.size,startedAt,'업로드 완료');
+            renderScore();
+            setScoreStatus('업로드 완료');
+            showToast('악보를 교체했습니다');
+            hideScoreProgress(1800);
+            logEvent('INFO','SCORE_DIRECT_RECOVERED',`name=${file.name} size=${file.size}`);
+            return;
+          }
+        }catch(metaErr){
+          logEvent('WARN','SCORE_DIRECT_META_FAIL',metaErr&&metaErr.message?metaErr.message:String(metaErr));
+        }
+        // 구버전 백엔드거나 직접 저장이 실패한 경우 기존 분할 업로드로 자동 전환합니다.
+        logEvent('WARN','SCORE_DIRECT_FALLBACK','resumable');
+        setScoreStatus('직접 저장 실패 · 분할 업로드로 재시도 중…','working');
+      }
+    }
+
     const startRes=await scorePost('uploadStart',{
       fileName:file.name,
       mimeType:file.type||'',
@@ -1179,9 +1243,10 @@ async function uploadScoreFile(file){
     hideScoreProgress(1800);
   }catch(e){
     const msg=e&&e.message?e.message:String(e);
+    logEvent('ERROR','SCORE_UPLOAD_FINAL_FAIL',`name=${file.name} type=${file.type||''} size=${file.size} msg=${msg}`);
     failScoreProgress(msg);
     setScoreStatus(msg,'error');
-    showToast('악보 업로드 실패');
+    showToast('악보 최종 저장 실패');
   }finally{
     scoreBusy=false;
     const input=document.getElementById('scoreFileInput');
