@@ -1,8 +1,8 @@
 /**
- * WORSHIP_SCORE_API v3.12.3
+ * WORSHIP_SCORE_API v3.12.5
  * 찬양팀 악보 전용 standalone Apps Script backend
  *
- * 현재 프런트(v3.12.3) 계약:
+ * 현재 프런트(v3.12.5) 계약:
  * - POST app=worship-score
  * - action=health | meta | uploadDirect | uploadStart | uploadChunk | delete
  * - 모든 POST 응답은 iframe postMessage bridge로 requestId를 그대로 돌려줌
@@ -16,7 +16,7 @@
  * - https://www.googleapis.com/auth/script.external_request
  */
 
-const SCORE_API_VERSION = 'v3.12.4';
+const SCORE_API_VERSION = 'v3.12.5';
 
 const SCORE_STORE = Object.freeze({
   APP: 'worship-score',
@@ -33,10 +33,20 @@ const SCORE_STORE = Object.freeze({
   STALE_UPLOAD_MS: 24 * 60 * 60 * 1000
 });
 
+function resetScoreAuthorization() {
+  ScriptApp.invalidateAuth();
+  return '기존 Apps Script 권한을 초기화했습니다. 편집기를 새로고침한 뒤 setupScoreStandalone을 실행하고 모든 요청 권한을 허용해주세요.';
+}
+
 function setupScoreStandalone() {
   const folder = getScoreFolder_(true);
   const rootName = DriveApp.getRootFolder().getName();
 
+  // DriveApp 자체의 쓰기 권한을 실제로 확인합니다.
+  const currentDescription = folder.getDescription() || '';
+  folder.setDescription(currentDescription);
+
+  // UrlFetch 권한을 확인합니다.
   const probe = UrlFetchApp.fetch('https://www.google.com/generate_204', {
     method: 'get',
     muteHttpExceptions: true,
@@ -47,12 +57,16 @@ function setupScoreStandalone() {
     throw new Error('외부 요청 권한 확인 실패: HTTP ' + status);
   }
 
+  // ScriptApp.getOAuthToken()이 Drive API "쓰기" scope까지 실제로 갖는지 확인합니다.
+  verifyDriveApiWriteScope_(folder);
+
   return [
     'WORSHIP_SCORE_API 설정 완료',
     '버전: ' + SCORE_API_VERSION,
     'Drive 루트: ' + rootName,
     '악보 폴더: ' + folder.getName(),
-    '폴더 ID: ' + folder.getId()
+    '폴더 ID: ' + folder.getId(),
+    'Drive API 쓰기 권한: 정상'
   ].join('\n');
 }
 
@@ -162,6 +176,9 @@ function scoreHealth_() {
     throw new Error('외부 요청 권한 확인 실패: HTTP ' + status);
   }
 
+  // 업로드를 시작하기 전에 OAuth 토큰의 실제 Drive API 쓰기 scope를 검증합니다.
+  verifyDriveApiWriteScope_(folder);
+
   return {
     ok: true,
     service: SCORE_STORE.APP,
@@ -171,6 +188,45 @@ function scoreHealth_() {
     folderId: folder.getId(),
     file: getCurrentScoreMeta_()
   };
+}
+
+function verifyDriveApiWriteScope_(folder) {
+  const folderId = folder.getId();
+  const url =
+    'https://www.googleapis.com/drive/v3/files/' +
+    encodeURIComponent(folderId) +
+    '?fields=id,appProperties';
+
+  const response = UrlFetchApp.fetch(url, {
+    method: 'patch',
+    contentType: 'application/json; charset=UTF-8',
+    headers: {
+      Authorization: 'Bearer ' + ScriptApp.getOAuthToken()
+    },
+    payload: JSON.stringify({
+      appProperties: {
+        worshipScoreApiProbe: 'ok'
+      }
+    }),
+    muteHttpExceptions: true
+  });
+
+  const status = response.getResponseCode();
+  if (status >= 200 && status < 300) return true;
+
+  const body = truncate_(response.getContentText(), 700);
+  if (status === 401 || status === 403) {
+    throw new Error(
+      'Google Drive 전체 쓰기 권한이 현재 OAuth 토큰에 없습니다. ' +
+      'Apps Script에서 resetScoreAuthorization 실행 → 편집기 새로고침 → ' +
+      'setupScoreStandalone 실행 후 Google Drive 접근 권한을 모두 허용해주세요. ' +
+      '상세: ' + body
+    );
+  }
+
+  throw new Error(
+    'Drive API 권한 확인 실패 (' + status + '): ' + body
+  );
 }
 
 function uploadScoreDirect_(p) {
@@ -246,9 +302,16 @@ function startScoreUpload_(p) {
 
   const status = response.getResponseCode();
   if (status < 200 || status >= 300) {
+    const detail = truncate_(response.getContentText(), 700);
+    if (status === 401 || status === 403) {
+      throw new Error(
+        'Google Drive API 쓰기 권한이 부족합니다. ' +
+        'resetScoreAuthorization 실행 → 편집기 새로고침 → setupScoreStandalone 실행 후 ' +
+        'Google Drive 접근 권한을 모두 허용해주세요. 상세: ' + detail
+      );
+    }
     throw new Error(
-      'Drive 업로드 준비 실패 (' + status + '): ' +
-      truncate_(response.getContentText(), 500)
+      'Drive 업로드 준비 실패 (' + status + '): ' + detail
     );
   }
 

@@ -84,7 +84,7 @@ main{padding:15px 15px 36px}.panel{display:none}.panel.active{display:block}.sec
 
 const PLAYLIST_ID='PLDThR_8ShZAFTVEZgp2jtZaha8bThHZXB';
 const STORAGE_PREFIX='worship_fast_v3_';
-const APP_VERSION='v3.12.4';
+const APP_VERSION='v3.12.5';
 const BOOTSTRAP_TIMEOUT_MS=25000;
 const MUTATE_TIMEOUT_MS=25000;
 
@@ -1146,7 +1146,9 @@ async function ensureScoreApiReady(){
     const caps=Array.isArray(res&&res.capabilities)?res.capabilities:[];
     const required=['meta','uploadDirect','uploadStart','uploadChunk'];
     const missing=required.filter(x=>!caps.includes(x));
-    if(!res||res.ok!==true||res.service!=='worship-score'||missing.length){
+    if(!res)throw new Error('악보 서버 응답이 없습니다.');
+    if(res.ok!==true)throw new Error(res.error||'악보 서버 점검에 실패했습니다.');
+    if(res.service!=='worship-score'||missing.length){
       throw new Error('악보 서버가 현재 앱 버전과 맞지 않습니다.');
     }
     logEvent('INFO','SCORE_API_READY',`version=${res.version||''} caps=${caps.join(',')}`);
@@ -1229,7 +1231,11 @@ async function uploadScoreFile(file){
         }
         throw new Error('직접 저장 완료 응답을 받지 못했습니다.');
       }catch(directErr){
-        logEvent('WARN','SCORE_DIRECT_RECOVERY',directErr&&directErr.message?directErr.message:String(directErr));
+        const directMsg=String(directErr&&directErr.message?directErr.message:directErr||'');
+        if(/scope|permission|authorization|권한|ACCESS_TOKEN_SCOPE_INSUFFICIENT|insufficientPermissions/i.test(directMsg)){
+          throw directErr;
+        }
+        logEvent('WARN','SCORE_DIRECT_RECOVERY',directMsg);
         // 응답만 놓친 경우 새 파일이 이미 저장됐을 수 있으므로 meta로 먼저 복구합니다.
         try{
           const metaRes=await scoreJsonp('meta',15000);
