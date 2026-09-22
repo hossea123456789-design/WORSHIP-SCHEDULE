@@ -42,6 +42,42 @@ const WORSHIP_API = Object.freeze({
 
 function doGet(e) { return worshipHandleRequest_(e); }
 
+function doPost(e) {
+  const p = (e && e.parameter) || {};
+  const requestId = String(p.requestId || '');
+  let result;
+  try {
+    if (String(p.app || '') !== 'worship') {
+      result = { ok: false, error: 'worship app 요청이 아닙니다.' };
+    } else {
+      result = worshipDispatch_(p);
+    }
+  } catch (err) {
+    console.error(err && err.stack ? err.stack : err);
+    result = { ok: false, error: String(err && err.message ? err.message : err) };
+  }
+  return worshipBridgeOutput_(result, requestId);
+}
+
+function worshipBridgeOutput_(data, requestId) {
+  const message = {
+    source: 'worship-schedule-api',
+    requestId: String(requestId || ''),
+    payload: data
+  };
+  const safeJson = JSON.stringify(message)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026');
+  const html = '<!doctype html><html><head><meta charset="utf-8"></head><body><script>' +
+    '(function(){var m=' + safeJson + ';' +
+    'try{window.top.postMessage(m,"*");}catch(e){}' +
+    'try{window.parent.postMessage(m,"*");}catch(e){}' +
+    '})();<\\/script></body></html>';
+  return HtmlService.createHtmlOutput(html)
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
 function handleWorshipApi_(e) { return worshipHandleRequest_(e); }
 function handleWorshipRequest_(e) { return worshipHandleRequest_(e); }
 function handleWorshipGet_(e) { return worshipHandleRequest_(e); }
@@ -49,17 +85,19 @@ function handleWorshipApiRequest_(e) { return worshipHandleRequest_(e); }
 function worshipApi_(e) { return worshipHandleRequest_(e); }
 function worshipDoGet_(e) { return worshipHandleRequest_(e); }
 
+function worshipDispatch_(p) {
+  const action = String((p && p.action) || '').trim();
+  if (action === 'bootstrap') return worshipBootstrap_();
+  if (action === 'revision') return { ok: true, revision: worshipGetRevision_() };
+  if (action === 'mutate') return worshipMutate_(worshipParseJson_(p.payload, null));
+  return { ok: false, error: '지원하지 않는 worship action: ' + action };
+}
+
 function worshipHandleRequest_(e) {
   const p = (e && e.parameter) || {};
   const callback = String(p.callback || '');
-  const action = String(p.action || '').trim();
   try {
-    let result;
-    if (action === 'bootstrap') result = worshipBootstrap_();
-    else if (action === 'revision') result = { ok: true, revision: worshipGetRevision_() };
-    else if (action === 'mutate') result = worshipMutate_(worshipParseJson_(p.payload, null));
-    else result = { ok: false, error: '지원하지 않는 worship action: ' + action };
-    return worshipOutput_(result, callback);
+    return worshipOutput_(worshipDispatch_(p), callback);
   } catch (err) {
     console.error(err && err.stack ? err.stack : err);
     return worshipOutput_({ ok: false, error: String(err && err.message ? err.message : err) }, callback);
