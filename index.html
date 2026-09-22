@@ -84,7 +84,7 @@ main{padding:15px 15px 36px}.panel{display:none}.panel.active{display:block}.sec
 
 const PLAYLIST_ID='PLDThR_8ShZAFTVEZgp2jtZaha8bThHZXB';
 const STORAGE_PREFIX='worship_fast_v3_';
-const APP_VERSION='v3.11.0';
+const APP_VERSION='v3.12.0';
 const BOOTSTRAP_TIMEOUT_MS=25000;
 const MUTATE_TIMEOUT_MS=25000;
 
@@ -185,7 +185,7 @@ function isHardConnectionError(err){
   return msg.includes('Apps Script API에 연결하지 못했습니다.');
 }
 
-function jsonp(action,params={},timeout=15000,options={}){
+function jsonpScript(action,params={},timeout=15000,options={}){
   const started=performance.now();
   logEvent('INFO','API_START',`action=${action}`);
   return new Promise((resolve,reject)=>{
@@ -208,6 +208,84 @@ function jsonp(action,params={},timeout=15000,options={}){
     script.src=API_URL+'?'+q.toString();
     document.head.appendChild(script);
   });
+}
+
+function worshipIframePost(action,params={},timeout=15000,options={}){
+  const started=performance.now();
+  const requestId='worship_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2);
+  logEvent('INFO','API_POST_START',`action=${action}`);
+  return new Promise((resolve,reject)=>{
+    const iframe=document.createElement('iframe');
+    iframe.name='worshipFrame_'+requestId;
+    iframe.style.display='none';
+
+    const form=document.createElement('form');
+    form.method='POST';
+    form.action=API_URL;
+    form.target=iframe.name;
+    form.style.display='none';
+
+    const add=(name,value)=>{
+      const input=document.createElement('input');
+      input.type='hidden';
+      input.name=name;
+      input.value=value==null?'':String(value);
+      form.appendChild(input);
+    };
+
+    add('app','worship');
+    add('action',action);
+    add('requestId',requestId);
+    Object.entries(params||{}).forEach(([k,v])=>add(k,v));
+
+    let done=false;
+    const cleanup=()=>{
+      window.removeEventListener('message',onMessage);
+      clearTimeout(timer);
+      form.remove();
+      iframe.remove();
+    };
+    const finish=(err,data)=>{
+      if(done)return;
+      done=true;
+      cleanup();
+      const ms=Math.round(performance.now()-started);
+      if(err){
+        logEvent(options.background?'WARN':'ERROR',options.background?'API_POST_FAIL_BG':'API_POST_FAIL',`action=${action} ms=${ms} msg=${err.message||err}`);
+        reject(err);
+      }else{
+        logEvent('INFO','API_POST_OK',`action=${action} ms=${ms}`);
+        resolve(data);
+      }
+    };
+    const onMessage=event=>{
+      const msg=event.data||{};
+      if(msg.source!=='worship-schedule-api'||msg.requestId!==requestId)return;
+      finish(null,msg.payload);
+    };
+    const timer=setTimeout(()=>finish(new Error('POST 대체 경로 응답 시간이 초과되었습니다.')),timeout);
+
+    window.addEventListener('message',onMessage);
+    document.body.appendChild(iframe);
+    document.body.appendChild(form);
+    try{form.submit()}catch(e){finish(e)}
+  });
+}
+
+async function jsonp(action,params={},timeout=15000,options={}){
+  try{
+    return await jsonpScript(action,params,timeout,options);
+  }catch(firstErr){
+    if(!navigator.onLine)throw firstErr;
+    logEvent('WARN','API_FALLBACK_POST',`action=${action} reason=${firstErr&&firstErr.message?firstErr.message:firstErr}`);
+    try{
+      return await worshipIframePost(action,params,timeout,options);
+    }catch(postErr){
+      const firstMsg=firstErr&&firstErr.message?firstErr.message:String(firstErr||'');
+      const postMsg=postErr&&postErr.message?postErr.message:String(postErr||'');
+      throw new Error(`일정 서버 연결 실패 · JSONP: ${firstMsg} · POST: ${postMsg}`);
+    }
+  }
 }
 
 function getClientId(){
