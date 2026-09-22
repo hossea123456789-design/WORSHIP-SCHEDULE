@@ -66,7 +66,7 @@ main{padding:15px 15px 36px}.panel{display:none}.panel.active{display:block}.sec
 <section id="tab-month" class="panel"><div class="sectionTitle"><h2>월별 편성표</h2></div><div class="card monthCard"><div class="monthToolbar"><div class="monthTitle" id="monthTitle"></div><div class="navGroup"><button class="squareBtn" id="prevMonth">‹</button><button class="squareBtn" id="monthEdit">편집</button><button class="squareBtn" id="nextMonth">›</button></div></div><div class="rotationBar"><div class="rotationText"><b id="rotationTitle"></b><span id="rotationDesc"></span></div><button class="primaryBtn" id="completeMonth">이 달 편성 완료</button></div><div class="matrixInfo" id="matrixInfo"></div><div id="matrixArea"></div></div></section>
 <section id="tab-prayer" class="panel"><div class="sectionTitle"><h2>기도 순서</h2></div><div id="prayerHero"></div><div class="card settingCard"><div class="cardHead"><h3>기도 안내 문구</h3><button class="primaryBtn" id="copyPrayer">복사</button></div><div class="cardBody"><div class="info" id="prayerCopyText" style="white-space:pre-line;user-select:text"></div></div></div><div class="card settingCard"><div class="cardHead"><h3>앞으로 9주</h3></div><div class="cardBody" id="prayerUpcoming"></div></div></section>
 <section id="tab-playlist" class="panel"><div class="sectionTitle"><h2>찬양 재생목록</h2></div><div class="card playlistCard"><div class="youtubeBox"><iframe id="youtubeFrame" title="주일 찬양 재생목록" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe></div><a class="ytLink" id="youtubeLink" target="_blank" rel="noopener">▶ YouTube에서 열기</a></div>
-<div class="card scoreCard"><div class="scoreHead"><h3>악보 자료</h3><button class="primaryBtn" id="scoreUploadBtn">+ 악보 올리기</button></div><div class="scoreBody"><input id="scoreFileInput" type="file" accept=".pdf,.ppt,.pptx,.doc,.docx,.jpg,.jpeg,.png" hidden><div id="scoreArea"><div class="scoreEmpty"><b>등록된 악보가 없습니다</b><span>PDF · PPT · PPTX 등 파일을 올리면 팀원 모두 같은 최신 악보를 볼 수 있습니다.</span></div></div><div class="scoreStatus" id="scoreStatus"></div><div class="scoreProgress" id="scoreProgress" hidden><div class="scoreProgressTop"><span id="scoreProgressLabel">업로드 준비 중</span><span class="scoreProgressPct" id="scoreProgressPct">0%</span></div><div class="scoreProgressTrack"><div class="scoreProgressFill" id="scoreProgressFill"></div></div><div class="scoreProgressDetail" id="scoreProgressDetail"></div></div></div></div></section>
+<div class="card scoreCard"><div class="scoreHead"><h3>악보 자료</h3><button class="primaryBtn" id="scoreUploadBtn">+ 악보 올리기</button></div><div class="scoreBody"><input id="scoreFileInput" type="file" accept="application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png,.pdf,.ppt,.pptx,.doc,.docx,.jpg,.jpeg,.png" hidden><div id="scoreArea"><div class="scoreEmpty"><b>등록된 악보가 없습니다</b><span>PDF · PPT · PPTX 등 파일을 올리면 팀원 모두 같은 최신 악보를 볼 수 있습니다.</span></div></div><div class="scoreStatus" id="scoreStatus"></div><div class="scoreProgress" id="scoreProgress" hidden><div class="scoreProgressTop"><span id="scoreProgressLabel">업로드 준비 중</span><span class="scoreProgressPct" id="scoreProgressPct">0%</span></div><div class="scoreProgressTrack"><div class="scoreProgressFill" id="scoreProgressFill"></div></div><div class="scoreProgressDetail" id="scoreProgressDetail"></div></div></div></div></section>
 <section id="tab-settings" class="panel"><div class="sectionTitle"><h2>설정</h2></div>
 <div class="card settingCard"><div class="cardHead"><h3>찬양 일정 날짜</h3></div><div class="cardBody"><div class="dateTabs"><button class="dateTab active" data-off="0">이번 달</button><button class="dateTab" data-off="1">다음 달</button></div><div id="dateSettingTitle" style="font-size:12px;font-weight:950;margin-bottom:8px"></div><div class="weekdayGrid"><div class="sun">일</div><div>월</div><div>화</div><div>수</div><div>목</div><div>금</div><div>토</div></div><div class="dateGrid" id="dateGrid"></div></div></div>
 <div class="card settingCard"><div class="cardHead"><h3>멤버 관리</h3><button class="primaryBtn" id="addMember">+ 멤버</button></div><div class="cardBody" id="memberList"></div></div>
@@ -84,7 +84,7 @@ main{padding:15px 15px 36px}.panel{display:none}.panel.active{display:block}.sec
 
 const PLAYLIST_ID='PLDThR_8ShZAFTVEZgp2jtZaha8bThHZXB';
 const STORAGE_PREFIX='worship_fast_v3_';
-const APP_VERSION='v3.12.0';
+const APP_VERSION='v3.12.1';
 const BOOTSTRAP_TIMEOUT_MS=25000;
 const MUTATE_TIMEOUT_MS=25000;
 
@@ -1108,10 +1108,23 @@ async function scoreChunkPostWithRetry(fields){
 async function uploadScoreFile(file){
   if(!file||scoreBusy)return;
   const ext=(file.name.split('.').pop()||'').toLowerCase();
-  if(!['pdf','ppt','pptx','doc','docx','jpg','jpeg','png'].includes(ext)){
-    showToast('지원하지 않는 파일 형식입니다');
+  const mime=String(file.type||'').toLowerCase();
+  const allowedExt=['pdf','ppt','pptx','doc','docx','jpg','jpeg','png'];
+  const allowedMime=[
+    'application/pdf',
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'image/jpeg',
+    'image/png'
+  ];
+  if(!allowedExt.includes(ext)&&!allowedMime.includes(mime)){
+    showToast('PDF · PPT · DOC · JPG · PNG 파일만 올릴 수 있습니다');
+    logEvent('WARN','SCORE_FILE_REJECT',`name=${file.name} type=${mime||'unknown'}`);
     return;
   }
+  logEvent('INFO','SCORE_FILE_PICKED',`name=${file.name} type=${mime||'unknown'} size=${file.size}`);
   if(file.size>25*1024*1024){
     showToast('악보 파일은 25MB 이하만 가능합니다');
     return;
