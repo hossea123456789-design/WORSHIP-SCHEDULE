@@ -84,11 +84,12 @@ main{padding:15px 15px 36px}.panel{display:none}.panel.active{display:block}.sec
 
 const PLAYLIST_ID='PLDThR_8ShZAFTVEZgp2jtZaha8bThHZXB';
 const STORAGE_PREFIX='worship_fast_v3_';
-const APP_VERSION='v3.12.3';
+const APP_VERSION='v3.12.4';
 const BOOTSTRAP_TIMEOUT_MS=25000;
 const MUTATE_TIMEOUT_MS=25000;
 
 const API_URL='https://script.google.com/macros/s/AKfycbwwYV6CBces0jCFTndl9EoKL_LU7P55TJ2eLrT1qCH0aL-XxZggaPClwz4FuZgZ3KulaQ/exec';
+const SCORE_API_URL='https://script.google.com/macros/s/AKfycbxyjSCotbCTOQ54H3IqutFZM0xQRF-92_bvJWMNcJKWdgqQjGgThiGFBtRmK1LlXObOdQ/exec';
 let STATE=null;
 let viewMonth=null;
 let monthEdit=false;
@@ -1035,7 +1036,7 @@ function scorePost(action,fields={},timeoutMs=45000){
     iframe.style.display='none';
     const form=document.createElement('form');
     form.method='POST';
-    form.action='https://script.google.com/macros/s/AKfycbxyjSCotbCTOQ54H3IqutFZM0xQRF-92_bvJWMNcJKWdgqQjGgThiGFBtRmK1LlXObOdQ/exec';
+    form.action=SCORE_API_URL;
     form.target=iframe.name;
     form.style.display='none';
 
@@ -1086,7 +1087,7 @@ function scorePost(action,fields={},timeoutMs=45000){
 async function loadScoreMeta(silent=true){
   if(scoreBusy)return;
   try{
-    const res=await scorePost('meta',{},15000);
+    const res=await scoreJsonp('meta',15000);
     SCORE_META=res.file||null;
     renderScore();
     setScoreStatus('');
@@ -1109,13 +1110,43 @@ function blobToBase64(blob){
 
 function waitMs(ms){return new Promise(resolve=>setTimeout(resolve,ms))}
 
+function scoreJsonp(action,timeout=15000){
+  const started=performance.now();
+  return new Promise((resolve,reject)=>{
+    const cb='__scorecb_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2);
+    const script=document.createElement('script');
+    const q=new URLSearchParams({action,callback:cb,_:String(Date.now())});
+    let done=false;
+    const timer=setTimeout(()=>finish(new Error('악보 서버 응답 시간이 초과되었습니다.')),timeout);
+    function finish(err,data){
+      if(done)return;
+      done=true;
+      clearTimeout(timer);
+      try{delete window[cb]}catch(e){}
+      script.remove();
+      const ms=Math.round(performance.now()-started);
+      if(err){
+        logEvent('WARN','SCORE_JSONP_FAIL',`action=${action} ms=${ms} msg=${err&&err.message?err.message:err}`);
+        reject(err);
+      }else{
+        logEvent('INFO','SCORE_JSONP_OK',`action=${action} ms=${ms}`);
+        resolve(data);
+      }
+    }
+    window[cb]=data=>finish(null,data);
+    script.onerror=()=>finish(new Error('악보 서버에 연결하지 못했습니다.'));
+    script.src=SCORE_API_URL+'?'+q.toString();
+    document.head.appendChild(script);
+  });
+}
+
 async function ensureScoreApiReady(){
   try{
-    const res=await scorePost('health',{},15000);
+    const res=await scoreJsonp('health',15000);
     const caps=Array.isArray(res&&res.capabilities)?res.capabilities:[];
     const required=['meta','uploadDirect','uploadStart','uploadChunk'];
     const missing=required.filter(x=>!caps.includes(x));
-    if(!res||res.service!=='worship-score'||missing.length){
+    if(!res||res.ok!==true||res.service!=='worship-score'||missing.length){
       throw new Error('악보 서버가 현재 앱 버전과 맞지 않습니다.');
     }
     logEvent('INFO','SCORE_API_READY',`version=${res.version||''} caps=${caps.join(',')}`);
@@ -1201,7 +1232,7 @@ async function uploadScoreFile(file){
         logEvent('WARN','SCORE_DIRECT_RECOVERY',directErr&&directErr.message?directErr.message:String(directErr));
         // 응답만 놓친 경우 새 파일이 이미 저장됐을 수 있으므로 meta로 먼저 복구합니다.
         try{
-          const metaRes=await scorePost('meta',{},15000);
+          const metaRes=await scoreJsonp('meta',15000);
           const recovered=metaRes&&metaRes.file;
           if(recovered&&String(recovered.name||'')===String(file.name||'')&&Number(recovered.size||0)===Number(file.size||0)){
             SCORE_META=recovered;

@@ -16,7 +16,7 @@
  * - https://www.googleapis.com/auth/script.external_request
  */
 
-const SCORE_API_VERSION = 'v3.12.3';
+const SCORE_API_VERSION = 'v3.12.4';
 
 const SCORE_STORE = Object.freeze({
   APP: 'worship-score',
@@ -631,6 +631,7 @@ function scoreReply_(data, requestId) {
     '<!doctype html><html><head><meta charset="utf-8"></head><body>' +
     '<script>' +
     'var m=' + json + ';' +
+    'try{window.top.postMessage(m,"*");}catch(e){}' +
     'try{window.parent.postMessage(m,"*");}catch(e){}' +
     '<\/script>' +
     '</body></html>';
