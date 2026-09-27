@@ -1,5 +1,5 @@
 /**
- * WORSHIP-SCHEDULE standalone Apps Script backend - optimized schedule-only v3.13.1
+ * WORSHIP-SCHEDULE standalone Apps Script backend - optimized schedule-only v3.13.2
  * - Maple DB와 완전히 분리된 찬양팀 전용 프로젝트용
  * - GET: bootstrap / revision / mutate(JSONP)
  * - 일정 전용: Drive/악보 업로드 코드 없음
@@ -395,6 +395,7 @@ function worshipMutate_(mutation) {
       case 'roleDelete': structural=true; worshipDeleteRole_(ss,payload,now); break;
       case 'prayerOrderSet': structural=true; worshipSetPrayerOrder_(ss,payload,now); break;
       case 'rotationComplete': structural=true; worshipSaveRotationSnapshot_(ss,payload,now); break;
+      case 'rotationSnapshotSet': structural=true; worshipSaveRotationPayload_(ss,payload,now); break;
       default: throw new Error('지원하지 않는 저장 작업: ' + type);
     }
     const revision = worshipIncrementRevision_(ss, now);
@@ -462,6 +463,72 @@ function worshipDeleteRole_(ss,p,now) {
 function worshipSetPrayerOrder_(ss,p,now) {
   const ids=Array.isArray(p.memberIds)?p.memberIds.map(String).filter(Boolean):[], members=worshipReadTable_(ss,WORSHIP_API.SHEETS.MEMBERS).objects, names={}; members.forEach(r=>{names[String(r.member_id)]=String(r.member_name||'');});
   const table=worshipReadTable_(ss,WORSHIP_API.SHEETS.PRAYER_ORDER); table.objects=ids.map((id,i)=>({position:i+1,member_id:id,display_name:names[id]||'',active:true,updated_at:now})); table.dirty=true; worshipWriteTable_(table);
+}
+
+function worshipSaveRotationPayload_(ss,p,now) {
+  const month=String(p.month||'');
+  if(!/^\d{4}-\d{2}$/.test(month)) throw new Error('기본값 월이 올바르지 않습니다.');
+
+  const dates=Array.isArray(p.dates)?p.dates.map(String):[];
+  const slots=Array.isArray(p.slots)?p.slots:[];
+  if(!dates.length) throw new Error('기본값으로 저장할 일정이 없습니다.');
+  if(slots.length>500) throw new Error('기본값 데이터가 너무 큽니다.');
+
+  const validRoleIds=new Set(
+    worshipReadTable_(ss,WORSHIP_API.SHEETS.ROLES).objects
+      .filter(r=>worshipTruthy_(r.active))
+      .map(r=>String(r.role_id))
+  );
+
+  const normalized=[];
+  slots.forEach(slot=>{
+    const eventIndex=Number(slot&&slot.eventIndex||0);
+    const date=String(slot&&slot.date||'');
+    const roleId=String(slot&&slot.roleId||'');
+    const memberIds=Array.isArray(slot&&slot.memberIds)
+      ?[...new Set(slot.memberIds.map(String).filter(Boolean))]
+      :[];
+
+    if(!Number.isFinite(eventIndex)||eventIndex<1||eventIndex>dates.length) {
+      throw new Error('기본값 순서 정보가 올바르지 않습니다.');
+    }
+    if(date!==dates[eventIndex-1]) {
+      throw new Error('기본값 날짜 순서가 일치하지 않습니다.');
+    }
+    if(!validRoleIds.has(roleId)) {
+      throw new Error('존재하지 않는 역할이 기본값에 포함되어 있습니다.');
+    }
+
+    memberIds.forEach((memberId,order)=>{
+      normalized.push({
+        base_month:month,
+        event_index:eventIndex,
+        role_id:roleId,
+        member_id:memberId,
+        sort_order:order+1,
+        active:true,
+        updated_at:now
+      });
+    });
+  });
+
+  const table=worshipReadTable_(ss,WORSHIP_API.SHEETS.ROTATION_BASE);
+  table.objects.forEach(r=>{
+    if(String(r.base_month)===month&&worshipTruthy_(r.active)){
+      r.active=false;
+      r.updated_at=now;
+      table.dirty=true;
+    }
+  });
+
+  normalized.forEach(row=>{
+    table.objects.push(row);
+    table.dirty=true;
+  });
+
+  // 빈 기본값이어도 기존 월 기본값을 비활성화해야 하므로 write 수행
+  if(!table.dirty) table.dirty=true;
+  worshipWriteTable_(table);
 }
 
 function worshipSaveRotationSnapshot_(ss,p,now) {

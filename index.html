@@ -84,7 +84,7 @@ main{padding:15px 15px 36px}.panel{display:none}.panel.active{display:block}.sec
 
 const PLAYLIST_ID='PLDThR_8ShZAFTVEZgp2jtZaha8bThHZXB';
 const STORAGE_PREFIX='worship_fast_v3_';
-const APP_VERSION='v3.13.1';
+const APP_VERSION='v3.13.2';
 const BOOTSTRAP_TIMEOUT_MS=25000;
 const MUTATE_TIMEOUT_MS=25000;
 
@@ -582,7 +582,6 @@ async function flushQueue(){
     );
 
     if(!useBatch&&first.type==='memberSave')showToast('멤버 저장 완료');
-    if(!useBatch&&first.type==='rotationComplete')showToast('기본값 저장 완료');
 
     if(pending.length){
       flushQueue();
@@ -593,7 +592,7 @@ async function flushQueue(){
 
     if(!useBatch&&(
       (first.type==='memberSave'&&!first.payload.memberId)||
-      ['memberDelete','roleSave','roleDelete','prayerOrderSet','rotationComplete'].includes(first.type)
+      ['memberDelete','roleSave','roleDelete','prayerOrderSet'].includes(first.type)
     )){
       needsFullRefresh=true;
       logEvent('INFO','POST_SAVE_REFRESH',`type=${first.type}`);
@@ -939,6 +938,95 @@ async function saveMonthDraft(){
   }
 }
 
+function buildCurrentMonthSnapshot(){
+  const mk=monthKey(viewMonth);
+  const dates=selectedDates(mk);
+  const slots=[];
+  dates.forEach((date,eventIndex)=>{
+    STATE.roles.forEach(role=>{
+      slots.push({
+        eventIndex:eventIndex+1,
+        date,
+        roleId:String(role.role_id),
+        memberIds:effectiveMemberIds(date,role.role_id).map(String)
+      });
+    });
+  });
+  return {month:mk,dates:dates.slice(),slots};
+}
+
+function applyRotationSnapshotLocal_(snapshot){
+  if(!STATE||!snapshot)return;
+  const mk=String(snapshot.month||'');
+  STATE.rotationBase=(STATE.rotationBase||[]).filter(r=>normalizeMonthKey(r&&r.base_month)!==mk);
+  (snapshot.slots||[]).forEach(slot=>{
+    (slot.memberIds||[]).forEach((memberId,order)=>{
+      STATE.rotationBase.push({
+        base_month:mk,
+        event_index:Number(slot.eventIndex||0),
+        role_id:String(slot.roleId||''),
+        member_id:String(memberId||''),
+        sort_order:order+1,
+        active:true
+      });
+    });
+  });
+}
+
+async function saveMonthAsDefault(){
+  if(monthSaveBusy||flushing||readInFlight)return;
+  if(monthEdit&&monthDraftCount()){
+    showToast('현재 수정사항을 먼저 저장해 주세요');
+    return;
+  }
+  if(pending.length){
+    showToast('기존 저장 처리 후 기본값을 저장해 주세요');
+    return;
+  }
+
+  const snapshot=buildCurrentMonthSnapshot();
+  if(!snapshot.dates.length){
+    showToast('기본값으로 저장할 일정이 없습니다');
+    return;
+  }
+
+  if(!confirm('현재 화면에 보이는 편성을 이후 달 자동 편성의 기본값으로 저장할까요? 현재 월 편성 자체는 변경하지 않습니다.'))return;
+
+  monthSaveBusy=true;
+  renderMonth();
+  setProcess('기본값 저장 중…','working');
+  logEvent('INFO','ROTATION_SNAPSHOT_START',`month=${snapshot.month} slots=${snapshot.slots.length}`);
+
+  const mutation={
+    id:'mu_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2),
+    clientId:CLIENT_ID,
+    type:'rotationSnapshotSet',
+    payload:snapshot
+  };
+
+  try{
+    const res=await jsonp('mutate',{payload:JSON.stringify(mutation)},60000);
+    if(!res||!res.ok)throw new Error((res&&res.error)||'기본값 저장에 실패했습니다.');
+
+    applyRotationSnapshotLocal_(snapshot);
+    if(STATE&&res.revision!=null)STATE.revision=res.revision;
+    cacheState();
+
+    monthSaveBusy=false;
+    renderAll();
+    setProcess('기본값 저장 완료','ok');
+    showToast('기본값 저장 완료');
+    logEvent('INFO','ROTATION_SNAPSHOT_OK',`month=${snapshot.month} revision=${res.revision}`);
+  }catch(e){
+    monthSaveBusy=false;
+    const msg=e&&e.message?e.message:String(e);
+    setProcess('기본값 저장 실패','error',msg);
+    showToast('기본값 저장 실패');
+    logEvent('ERROR','ROTATION_SNAPSHOT_FAIL',`month=${snapshot.month} msg=${msg}`);
+    renderMonth();
+  }
+}
+
 function renderMonth(){
   const mk=monthKey(viewMonth);
   const [y,m]=mk.split('-').map(Number);
@@ -960,9 +1048,9 @@ function renderMonth(){
   const completeBtn=document.getElementById('completeMonth');
   const saveBtn=document.getElementById('monthSave');
   const editBtn=document.getElementById('monthEdit');
-  const rotationSaving=pending.some(x=>x.type==='rotationComplete'&&String((x.payload||{}).month)===mk);
+  const rotationSaving=monthSaveBusy;
 
-  completeBtn.disabled=rotationSaving||monthSaveBusy||draftCount>0;
+  completeBtn.disabled=rotationSaving||draftCount>0||flushing||readInFlight;
   completeBtn.textContent=rotationSaving?'기본값 저장 중…':'기본값으로 저장';
 
   saveBtn.hidden=!editingThisMonth;
@@ -1727,16 +1815,7 @@ document.getElementById('monthEdit').onclick=()=>{
   else beginMonthEdit();
 };
 document.getElementById('monthSave').onclick=saveMonthDraft;
-document.getElementById('completeMonth').onclick=()=>{
-  if(monthEdit&&monthDraftCount()){
-    showToast('현재 수정사항을 먼저 저장해 주세요');
-    return;
-  }
-  if(confirm('현재 월 편성을 이후 달 자동 편성의 기본값으로 저장할까요? 일반 저장과 달리 이후 월 패턴에 적용됩니다.')){
-    showToast('기본값 저장 중');
-    queueMutation('rotationComplete',{month:monthKey(viewMonth)});
-  }
-};
+document.getElementById('completeMonth').onclick=saveMonthAsDefault;
 document.getElementById('copyPrayer').onclick=async()=>{
   const text=document.getElementById('prayerCopyText').textContent;
   try{
