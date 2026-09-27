@@ -63,7 +63,7 @@ main{padding:15px 15px 36px}.panel{display:none}.panel.active{display:block}.sec
 <div class="card weekCard"><div class="weekHead"><div class="weekTitle">이번 주<span class="weekBadge">THIS WEEK</span></div><div class="dateLine">일정을 불러오는 중</div></div><div class="weekRoles"><div class="weekRole"><div class="roleLabel"><span class="roleDot"></span><span class="skeleton" style="width:58px;height:15px;border-radius:7px"></span></div><div class="people"><span class="person skeleton" style="width:72px"></span></div></div><div class="weekRole"><div class="roleLabel"><span class="roleDot"></span><span class="skeleton" style="width:72px;height:15px;border-radius:7px"></span></div><div class="people"><span class="person skeleton" style="width:84px"></span></div></div><div class="weekRole"><div class="roleLabel"><span class="roleDot"></span><span class="skeleton" style="width:52px;height:15px;border-radius:7px"></span></div><div class="people"><span class="person skeleton" style="width:68px"></span></div></div></div></div>
 <div class="card weekCard"><div class="weekHead"><div class="weekTitle">다음 주<span class="weekBadge">NEXT WEEK</span></div><div class="dateLine">일정을 불러오는 중</div></div><div class="weekRoles"><div class="weekRole"><div class="roleLabel"><span class="roleDot"></span><span class="skeleton" style="width:58px;height:15px;border-radius:7px"></span></div><div class="people"><span class="person skeleton" style="width:72px"></span></div></div><div class="weekRole"><div class="roleLabel"><span class="roleDot"></span><span class="skeleton" style="width:72px;height:15px;border-radius:7px"></span></div><div class="people"><span class="person skeleton" style="width:84px"></span></div></div></div></div>
 </div></section>
-<section id="tab-month" class="panel"><div class="sectionTitle"><h2>월별 편성표</h2></div><div class="card monthCard"><div class="monthToolbar"><div class="monthTitle" id="monthTitle"></div><div class="navGroup"><button class="squareBtn" id="prevMonth">‹</button><button class="squareBtn" id="monthEdit">편집</button><button class="squareBtn" id="nextMonth">›</button></div></div><div class="rotationBar"><div class="rotationText"><b id="rotationTitle"></b><span id="rotationDesc"></span></div><button class="primaryBtn" id="completeMonth">이 달 편성 완료</button></div><div class="matrixInfo" id="matrixInfo"></div><div id="matrixArea"></div></div></section>
+<section id="tab-month" class="panel"><div class="sectionTitle"><h2>월별 편성표</h2></div><div class="card monthCard"><div class="monthToolbar"><div class="monthTitle" id="monthTitle"></div><div class="navGroup"><button class="squareBtn" id="prevMonth">‹</button><button class="squareBtn" id="monthEdit">수정</button><button class="squareBtn on" id="monthSave" hidden>저장</button><button class="squareBtn" id="nextMonth">›</button></div></div><div class="rotationBar"><div class="rotationText"><b id="rotationTitle"></b><span id="rotationDesc"></span></div><button class="primaryBtn" id="completeMonth">기본값으로 저장</button></div><div class="matrixInfo" id="matrixInfo"></div><div id="matrixArea"></div></div></section>
 <section id="tab-prayer" class="panel"><div class="sectionTitle"><h2>기도 순서</h2></div><div id="prayerHero"></div><div class="card settingCard"><div class="cardHead"><h3>기도 안내 문구</h3><button class="primaryBtn" id="copyPrayer">복사</button></div><div class="cardBody"><div class="info" id="prayerCopyText" style="white-space:pre-line;user-select:text"></div></div></div><div class="card settingCard"><div class="cardHead"><h3>앞으로 9주</h3></div><div class="cardBody" id="prayerUpcoming"></div></div></section>
 <section id="tab-playlist" class="panel"><div class="sectionTitle"><h2>찬양 재생목록</h2></div><div class="card playlistCard"><div class="youtubeBox"><iframe id="youtubeFrame" title="주일 찬양 재생목록" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe></div><a class="ytLink" id="youtubeLink" target="_blank" rel="noopener">▶ YouTube에서 열기</a></div>
 <div class="card scoreCard"><div class="scoreHead"><h3>악보 자료</h3><button class="primaryBtn" id="scoreUploadBtn">+ 악보 올리기</button></div><div class="scoreBody"><input id="scoreFileInput" type="file" accept="application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png,.pdf,.ppt,.pptx,.doc,.docx,.jpg,.jpeg,.png" hidden><div id="scoreArea"><div class="scoreEmpty"><b>등록된 악보가 없습니다</b><span>PDF · PPT · PPTX 등 파일을 올리면 팀원 모두 같은 최신 악보를 볼 수 있습니다.</span></div></div><div class="scoreStatus" id="scoreStatus"></div><div class="scoreProgress" id="scoreProgress" hidden><div class="scoreProgressTop"><span id="scoreProgressLabel">업로드 준비 중</span><span class="scoreProgressPct" id="scoreProgressPct">0%</span></div><div class="scoreProgressTrack"><div class="scoreProgressFill" id="scoreProgressFill"></div></div><div class="scoreProgressDetail" id="scoreProgressDetail"></div></div></div></div></section>
@@ -84,7 +84,7 @@ main{padding:15px 15px 36px}.panel{display:none}.panel.active{display:block}.sec
 
 const PLAYLIST_ID='PLDThR_8ShZAFTVEZgp2jtZaha8bThHZXB';
 const STORAGE_PREFIX='worship_fast_v3_';
-const APP_VERSION='v3.12.6';
+const APP_VERSION='v3.13.0';
 const BOOTSTRAP_TIMEOUT_MS=25000;
 const MUTATE_TIMEOUT_MS=25000;
 
@@ -93,6 +93,9 @@ const SCORE_API_URL='https://script.google.com/macros/s/AKfycbxyjSCotbCTOQ54H3Iq
 let STATE=null;
 let viewMonth=null;
 let monthEdit=false;
+let monthDraftMonth='';
+let monthDraft={};
+let monthSaveBusy=false;
 let dateSettingOffset=0;
 let pickerDate=null,pickerRoleId=null,pickerSelected=[];
 let pending=[];
@@ -792,6 +795,107 @@ function renderWeek(){
     </div>`;
   }).join('');
 }
+function monthDraftKey(date,roleId){return String(date)+'|'+String(roleId)}
+function monthDraftCount(){return Object.keys(monthDraft||{}).length}
+function monthDraftMemberIds(date,roleId){
+  const key=monthDraftKey(date,roleId);
+  const row=monthDraft&&monthDraft[key];
+  return row?row.memberIds.slice():effectiveMemberIds(date,roleId);
+}
+function monthDraftInherited(date,roleId){
+  return !(monthDraft&&monthDraft[monthDraftKey(date,roleId)])&&isInherited(date,roleId);
+}
+function beginMonthEdit(){
+  if(monthSaveBusy)return;
+  monthEdit=true;
+  monthDraftMonth=monthKey(viewMonth);
+  monthDraft={};
+  setProcess('수정 중 · 저장 전','working');
+  renderMonth();
+}
+function discardMonthEdit(force=false){
+  if(monthSaveBusy)return false;
+  const count=monthDraftCount();
+  if(count&&!force&&!confirm(`저장하지 않은 수정 ${count}건이 있습니다. 취소할까요?`))return false;
+  monthEdit=false;
+  monthDraftMonth='';
+  monthDraft={};
+  setProcess(pending.length?'저장 대기…':'연결 완료',pending.length?'working':'ok');
+  renderMonth();
+  return true;
+}
+function setMonthDraftAssignment(date,roleId,memberIds){
+  if(!monthEdit||monthDraftMonth!==date.slice(0,7)){
+    showToast('먼저 수정 버튼을 눌러주세요');
+    return;
+  }
+  const key=monthDraftKey(date,roleId);
+  monthDraft[key]={
+    id:'mu_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2),
+    date:String(date),
+    roleId:String(roleId),
+    memberIds:[...new Set((memberIds||[]).map(String).filter(Boolean))]
+  };
+  setProcess(`수정 중 · ${monthDraftCount()}건 · 저장 전`,'working');
+  renderMonth();
+}
+async function saveMonthDraft(){
+  if(!monthEdit||monthSaveBusy)return;
+  const changes=Object.values(monthDraft||{});
+  if(!changes.length){
+    monthEdit=false;
+    monthDraftMonth='';
+    renderMonth();
+    setProcess('변경 없음','ok');
+    return;
+  }
+
+  monthSaveBusy=true;
+  renderMonth();
+  setProcess(`현재 월 ${changes.length}건 저장 중…`,'working');
+  logEvent('INFO','MONTH_SAVE_START',`month=${monthDraftMonth} count=${changes.length}`);
+
+  const items=changes.map(x=>({
+    id:x.id,
+    clientId:CLIENT_ID,
+    type:'assignmentSet',
+    payload:{date:x.date,roleId:x.roleId,memberIds:x.memberIds}
+  }));
+
+  try{
+    const res=await jsonp('mutateBatch',{payload:JSON.stringify({items})},60000);
+    if(!res||!res.ok)throw new Error((res&&res.error)||'월 편성 저장에 실패했습니다.');
+
+    changes.forEach(x=>applyOptimistic({
+      id:x.id,
+      type:'assignmentSet',
+      payload:{date:x.date,roleId:x.roleId,memberIds:x.memberIds}
+    }));
+    if(STATE&&res.revision!=null)STATE.revision=res.revision;
+    cacheState();
+
+    const savedCount=changes.length;
+    monthEdit=false;
+    monthDraftMonth='';
+    monthDraft={};
+    monthSaveBusy=false;
+    renderAll();
+    setProcess('저장 완료','ok');
+    showToast(`현재 월 ${savedCount}건 저장 완료`);
+    logEvent('INFO','MONTH_SAVE_OK',`count=${savedCount} revision=${res.revision}`);
+
+    needsFullRefresh=true;
+    setTimeout(()=>bootstrap(false,true),250);
+  }catch(e){
+    monthSaveBusy=false;
+    const msg=e&&e.message?e.message:String(e);
+    logEvent('ERROR','MONTH_SAVE_FAIL',`count=${changes.length} msg=${msg}`);
+    setProcess('저장 실패 · 수정 내용 유지','error',msg);
+    showToast('저장 실패 · 수정 내용은 그대로 유지됩니다');
+    renderMonth();
+  }
+}
+
 function renderMonth(){
   const mk=monthKey(viewMonth);
   const [y,m]=mk.split('-').map(Number);
@@ -808,15 +912,30 @@ function renderMonth(){
   const nextBtn=document.getElementById('nextMonth');
   if(prevBtn)prevBtn.disabled=false;
   if(nextBtn){nextBtn.disabled=monthNum(mk)>=monthNum(horizonEndKey());nextBtn.title=nextBtn.disabled?'현재 기준 12개월까지만 자동 편성됩니다.':'';}
+  const editingThisMonth=monthEdit&&monthDraftMonth===mk;
+  const draftCount=editingThisMonth?monthDraftCount():0;
   const completeBtn=document.getElementById('completeMonth');
+  const saveBtn=document.getElementById('monthSave');
+  const editBtn=document.getElementById('monthEdit');
   const rotationSaving=pending.some(x=>x.type==='rotationComplete'&&String((x.payload||{}).month)===mk);
-  completeBtn.disabled=rotationSaving;
-  completeBtn.textContent=rotationSaving?'저장 중…':'이 달 편성 완료';
-  document.getElementById('monthEdit').classList.toggle('on',monthEdit);
-  document.getElementById('monthEdit').textContent=monthEdit?'편집중':'편집';
-  document.getElementById('rotationTitle').textContent=base?`${base.replace('-','년 ')}월 로테이션 적용 중`:'로테이션 기준 없음';
-  document.getElementById('rotationDesc').textContent=base?`자동 적용 범위 · ${horizonEndKey().replace('-','년 ')}월까지`:`기준 월에서 편성 완료를 누르면 이후 월에 자동 적용됩니다.`;
-  document.getElementById('matrixInfo').textContent=`자동 편성 표시 범위: 현재 월부터 ${horizonEndKey().replace('-','년 ')}월까지`;
+
+  completeBtn.disabled=rotationSaving||monthSaveBusy||draftCount>0;
+  completeBtn.textContent=rotationSaving?'기본값 저장 중…':'기본값으로 저장';
+
+  saveBtn.hidden=!editingThisMonth;
+  saveBtn.disabled=monthSaveBusy||draftCount===0;
+  saveBtn.textContent=monthSaveBusy?'저장 중…':(draftCount?`저장(${draftCount})`:'저장');
+
+  editBtn.classList.toggle('on',editingThisMonth);
+  editBtn.textContent=editingThisMonth?'취소':'수정';
+
+  document.getElementById('rotationTitle').textContent=base?`기본값 · ${base.replace('-','년 ')}월 편성`:'기본값 없음';
+  document.getElementById('rotationDesc').textContent=base
+    ?`이후 월 자동 편성에만 사용 · 일반 저장은 현재 월만 변경`
+    :`현재 월을 이후 달 자동 편성 기준으로 쓰려면 '기본값으로 저장'을 누르세요.`;
+  document.getElementById('matrixInfo').textContent=editingThisMonth
+    ?`수정 중 · 셀을 원하는 만큼 바꾼 뒤 저장을 한 번만 누르면 됩니다.`
+    :`일반 수정은 현재 월만 변경합니다. 이후 달 기본 패턴은 별도로 저장합니다.`;
 
 
   if(!dates.length){
@@ -839,9 +958,9 @@ function renderMonth(){
     html+=`<tr><td class="roleCol"><div class="roleLabel"><span class="roleDot ${cls}"></span>${escapeHtml(r.role_name)}</div></td>`;
 
     dates.forEach(date=>{
-      const ids=effectiveMemberIds(date,r.role_id);
-      const inherited=isInherited(date,r.role_id);
-      html+=`<td class="scheduleCell ${monthEdit?'editable':''}" ${monthEdit?`onclick="openPicker('${date}','${r.role_id}')"`:''}>${
+      const ids=editingThisMonth?monthDraftMemberIds(date,r.role_id):effectiveMemberIds(date,r.role_id);
+      const inherited=editingThisMonth?monthDraftInherited(date,r.role_id):isInherited(date,r.role_id);
+      html+=`<td class="scheduleCell ${editingThisMonth?'editable':''}" ${editingThisMonth?`onclick="openPicker('${date}','${r.role_id}')"`:''}>${
         ids.length
         ?ids.map(id=>`<span class="cellPerson ${cls}">${escapeHtml((getMember(id)||{}).member_name||'알 수 없음')}${inherited?'<i class="autoMark"></i>':''}</span>`).join('')
         :'<span class="cellEmpty">미정</span>'
@@ -1388,7 +1507,7 @@ document.getElementById('backdrop').onclick=closeModal;
 function openPicker(date,roleId){
   pickerDate=date;
   pickerRoleId=roleId;
-  pickerSelected=effectiveMemberIds(date,roleId).slice();
+  pickerSelected=monthDraftMemberIds(date,roleId).slice();
 
   const role=getRole(roleId);
   const members=eligibleMembers(roleId);
@@ -1396,7 +1515,7 @@ function openPicker(date,roleId){
 
   openModal(
     `${date} · ${role.role_name}`,
-    `<div class="hint" style="margin-bottom:9px">${multiple?'이름을 누를 때마다 즉시 추가/해제됩니다.':'이름을 누르면 즉시 저장되고 닫힙니다.'}</div>
+    `<div class="hint" style="margin-bottom:9px">${multiple?'여러 명을 자유롭게 선택할 수 있습니다. 서버 저장은 월 화면의 저장 버튼을 한 번만 누르면 됩니다.':'선택하면 임시 반영됩니다. 서버 저장은 월 화면의 저장 버튼을 한 번만 누르면 됩니다.'}</div>
     <div class="pickGrid">
       <button class="pickBtn ${pickerSelected.length?'':'selected'}" onclick="pickNone()">미정</button>
       ${members.map(m=>`<button class="pickBtn ${pickerSelected.includes(String(m.member_id))?'selected':''}" onclick="pickMember('${m.member_id}')">${escapeHtml(m.member_name)}</button>`).join('')}
@@ -1406,7 +1525,7 @@ function openPicker(date,roleId){
 
 function pickNone(){
   pickerSelected=[];
-  queueMutation('assignmentSet',{date:pickerDate,roleId:pickerRoleId,memberIds:[]});
+  setMonthDraftAssignment(pickerDate,pickerRoleId,[]);
   closeModal();
 }
 
@@ -1416,7 +1535,7 @@ function pickMember(id){
 
   if(!multiple){
     pickerSelected=[id];
-    queueMutation('assignmentSet',{date:pickerDate,roleId:pickerRoleId,memberIds:pickerSelected});
+    setMonthDraftAssignment(pickerDate,pickerRoleId,pickerSelected);
     closeModal();
     return;
   }
@@ -1425,7 +1544,7 @@ function pickMember(id){
     ?pickerSelected.filter(x=>x!==id)
     :[...pickerSelected,id];
 
-  queueMutation('assignmentSet',{date:pickerDate,roleId:pickerRoleId,memberIds:pickerSelected});
+  setMonthDraftAssignment(pickerDate,pickerRoleId,pickerSelected);
   openPicker(pickerDate,pickerRoleId);
 }
 
@@ -1546,10 +1665,12 @@ function savePrayerOrder(){
 }
 
 document.getElementById('prevMonth').onclick=()=>{
+  if(monthEdit&&!discardMonthEdit())return;
   viewMonth=new Date(viewMonth.getFullYear(),viewMonth.getMonth()-1,1);
   renderMonth();
 };
 document.getElementById('nextMonth').onclick=()=>{
+  if(monthEdit&&!discardMonthEdit())return;
   const next=new Date(viewMonth.getFullYear(),viewMonth.getMonth()+1,1);
   if(monthNum(monthKey(next))>monthNum(horizonEndKey())){
     showToast(`자동 편성은 ${horizonEndKey().replace('-','년 ')}월까지 표시됩니다`);
@@ -1559,12 +1680,18 @@ document.getElementById('nextMonth').onclick=()=>{
   renderMonth();
 };
 document.getElementById('monthEdit').onclick=()=>{
-  monthEdit=!monthEdit;
-  renderMonth();
+  if(monthEdit)discardMonthEdit();
+  else beginMonthEdit();
 };
+document.getElementById('monthSave').onclick=saveMonthDraft;
 document.getElementById('completeMonth').onclick=()=>{
-  if(confirm('현재 월 편성을 로테이션 기준으로 저장할까요? 이후 달은 이 패턴을 자동으로 이어받습니다.')){
-    showToast('편성 기준 저장 중'); queueMutation('rotationComplete',{month:monthKey(viewMonth)});
+  if(monthEdit&&monthDraftCount()){
+    showToast('현재 수정사항을 먼저 저장해 주세요');
+    return;
+  }
+  if(confirm('현재 월 편성을 이후 달 자동 편성의 기본값으로 저장할까요? 일반 저장과 달리 이후 월 패턴에 적용됩니다.')){
+    showToast('기본값 저장 중');
+    queueMutation('rotationComplete',{month:monthKey(viewMonth)});
   }
 };
 document.getElementById('copyPrayer').onclick=async()=>{
@@ -1594,6 +1721,7 @@ document.querySelectorAll('.dateTab').forEach(b=>b.onclick=()=>{
 });
 
 document.querySelectorAll('.navBtn').forEach(b=>b.onclick=()=>{
+  if(monthEdit&&b.dataset.tab!=='month'&&!discardMonthEdit())return;
   document.querySelectorAll('.navBtn').forEach(x=>x.classList.toggle('active',x===b));
   document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));
   document.getElementById('tab-'+b.dataset.tab).classList.add('active');

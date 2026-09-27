@@ -1,5 +1,5 @@
 /**
- * WORSHIP-SCHEDULE standalone Apps Script backend - optimized schedule-only
+ * WORSHIP-SCHEDULE standalone Apps Script backend - optimized schedule-only v3.13.0
  * - Maple DB와 완전히 분리된 찬양팀 전용 프로젝트용
  * - GET: bootstrap / revision / mutate(JSONP)
  * - 일정 전용: Drive/악보 업로드 코드 없음
@@ -90,6 +90,7 @@ function worshipDispatch_(p) {
   if (action === 'bootstrap') return worshipBootstrap_();
   if (action === 'revision') return { ok: true, revision: worshipGetRevision_() };
   if (action === 'mutate') return worshipMutate_(worshipParseJson_(p.payload, null));
+  if (action === 'mutateBatch') return worshipMutateBatch_(worshipParseJson_(p.payload, null));
   return { ok: false, error: '지원하지 않는 worship action: ' + action };
 }
 
@@ -165,6 +166,212 @@ function worshipGetRevision_() {
   return revision;
 }
 
+
+function worshipMutateBatch_(batch) {
+  const items = batch && Array.isArray(batch.items) ? batch.items : [];
+  if (!items.length) throw new Error('묶음 저장 항목이 없습니다.');
+  if (items.length > 60) throw new Error('한 번에 저장할 수 있는 변경은 최대 60건입니다.');
+
+  const allowed = new Set(['assignmentSet', 'eventSet']);
+  items.forEach(m => {
+    if (!m || !String(m.id || '') || !allowed.has(String(m.type || ''))) {
+      throw new Error('묶음 저장 요청 형식이 올바르지 않습니다.');
+    }
+  });
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(4000)) return { ok: true, busy: true, retryAfterMs: 1000 };
+
+  try {
+    const ss = worshipDb_();
+    const now = worshipNow_();
+    const appliedIds = worshipRecentMutationIdSet_(ss);
+
+    const roles = worshipReadTable_(ss, WORSHIP_API.SHEETS.ROLES).objects
+      .filter(r => worshipTruthy_(r.active));
+    const roleMap = {};
+    roles.forEach(r => roleMap[String(r.role_id)] = r);
+
+    const assignments = worshipReadTable_(ss, WORSHIP_API.SHEETS.ASSIGNMENTS);
+    const events = worshipReadTable_(ss, WORSHIP_API.SHEETS.EVENTS);
+    const applied = [];
+    let duplicateCount = 0;
+
+    items.forEach(m => {
+      const id = String(m.id || '');
+      if (appliedIds.has(id)) {
+        duplicateCount++;
+        return;
+      }
+
+      const type = String(m.type || '');
+      const payload = m.payload || {};
+
+      if (type === 'assignmentSet') {
+        worshipApplyAssignmentTable_(assignments, roleMap, payload, now);
+      } else if (type === 'eventSet') {
+        worshipApplyEventTable_(events, payload, now);
+      }
+
+      applied.push(m);
+      appliedIds.add(id);
+    });
+
+    if (!applied.length) {
+      return {
+        ok: true,
+        revision: worshipGetRevision_(),
+        appliedCount: 0,
+        duplicateCount: duplicateCount
+      };
+    }
+
+    if (assignments.dirty) worshipWriteTable_(assignments);
+    if (events.dirty) worshipWriteTable_(events);
+
+    const revision = worshipIncrementRevision_(ss, now);
+    worshipAppendMutationLogs_(ss, applied, now);
+    SpreadsheetApp.flush();
+
+    const scriptCache = CacheService.getScriptCache();
+    scriptCache.remove(WORSHIP_API.CACHE_KEY);
+    try {
+      scriptCache.put(WORSHIP_API.REV_CACHE_KEY, String(revision), WORSHIP_API.REV_CACHE_SECONDS);
+    } catch (_) {}
+
+    return {
+      ok: true,
+      revision: revision,
+      appliedCount: applied.length,
+      duplicateCount: duplicateCount
+    };
+  } catch (err) {
+    console.error(err && err.stack ? err.stack : err);
+    return { ok: false, error: String(err && err.message ? err.message : err) };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function worshipApplyAssignmentTable_(table, roleMap, p, now) {
+  const date = String(p.date || '');
+  const roleId = String(p.roleId || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !roleId) {
+    throw new Error('배정 날짜/역할이 올바르지 않습니다.');
+  }
+
+  const role = roleMap[roleId];
+  if (!role) throw new Error('존재하지 않는 역할입니다.');
+
+  let memberIds = Array.isArray(p.memberIds)
+    ? p.memberIds.map(String).filter(Boolean)
+    : [];
+  memberIds = [...new Set(memberIds)];
+  if (!worshipTruthy_(role.allow_multiple)) memberIds = memberIds.slice(0, 1);
+
+  table.objects.forEach(r => {
+    if (
+      worshipIsoDate_(r.event_date) === date &&
+      String(r.role_id) === roleId &&
+      worshipTruthy_(r.active)
+    ) {
+      r.active = false;
+      r.updated_at = now;
+      table.dirty = true;
+    }
+  });
+
+  if (!memberIds.length) {
+    table.objects.push({
+      assignment_id: worshipId_('a'),
+      event_date: date,
+      role_id: roleId,
+      member_id: '',
+      sort_order: 0,
+      source: 'manual_clear',
+      active: true,
+      updated_at: now
+    });
+    table.dirty = true;
+    return;
+  }
+
+  memberIds.forEach((memberId, i) => {
+    table.objects.push({
+      assignment_id: worshipId_('a'),
+      event_date: date,
+      role_id: roleId,
+      member_id: memberId,
+      sort_order: i + 1,
+      source: 'manual',
+      active: true,
+      updated_at: now
+    });
+    table.dirty = true;
+  });
+}
+
+function worshipApplyEventTable_(table, p, now) {
+  const date = String(p.date || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw new Error('일정 날짜가 올바르지 않습니다.');
+  }
+
+  let row = table.objects.find(r => worshipIsoDate_(r.event_date) === date);
+  if (!row) {
+    row = {
+      event_date: date,
+      event_type: 'worship',
+      title: String(p.title || ''),
+      active: !!p.active,
+      source: 'manual',
+      updated_at: now
+    };
+    table.objects.push(row);
+  } else {
+    row.event_type = String(row.event_type || 'worship');
+    row.title = String(p.title == null ? row.title || '' : p.title);
+    row.active = !!p.active;
+    row.source = 'manual';
+    row.updated_at = now;
+  }
+  table.dirty = true;
+}
+
+function worshipRecentMutationIdSet_(ss) {
+  const sheet = ss.getSheetByName(WORSHIP_API.SHEETS.MUTATION_LOG);
+  const out = new Set();
+  if (!sheet || sheet.getLastRow() < 2) return out;
+
+  const count = Math.min(Math.max(sheet.getLastRow() - 1, 0), WORSHIP_API.LOG_KEEP);
+  if (!count) return out;
+
+  const start = sheet.getLastRow() - count + 1;
+  sheet.getRange(start, 1, count, 1).getDisplayValues()
+    .forEach(r => out.add(String(r[0] || '')));
+  return out;
+}
+
+function worshipAppendMutationLogs_(ss, items, now) {
+  const sheet = ss.getSheetByName(WORSHIP_API.SHEETS.MUTATION_LOG);
+  if (!sheet) throw new Error('필수 시트가 없습니다: ' + WORSHIP_API.SHEETS.MUTATION_LOG);
+
+  const rows = items.map(m => [
+    String(m.id || ''),
+    String(m.clientId || ''),
+    String(m.type || ''),
+    now
+  ]);
+  if (rows.length) {
+    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, 4).setValues(rows);
+  }
+
+  const dataRows = Math.max(sheet.getLastRow() - 1, 0);
+  if (dataRows > WORSHIP_API.LOG_KEEP) {
+    sheet.deleteRows(2, dataRows - WORSHIP_API.LOG_KEEP);
+  }
+}
+
 function worshipMutate_(mutation) {
   if (!mutation || typeof mutation !== 'object') throw new Error('저장 요청 형식이 올바르지 않습니다.');
   const mutationId = String(mutation.id || '');
@@ -204,24 +411,18 @@ function worshipMutate_(mutation) {
 }
 
 function worshipSetAssignment_(ss,p,now) {
-  const date=String(p.date||''), roleId=String(p.roleId||'');
-  if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!roleId) throw new Error('배정 날짜/역할이 올바르지 않습니다.');
-  const role=worshipReadTable_(ss,WORSHIP_API.SHEETS.ROLES).objects.find(r=>String(r.role_id)===roleId&&worshipTruthy_(r.active));
-  if(!role) throw new Error('존재하지 않는 역할입니다.');
-  let memberIds=Array.isArray(p.memberIds)?p.memberIds.map(String).filter(Boolean):[];
-  memberIds=[...new Set(memberIds)]; if(!worshipTruthy_(role.allow_multiple)) memberIds=memberIds.slice(0,1);
+  const roles=worshipReadTable_(ss,WORSHIP_API.SHEETS.ROLES).objects.filter(r=>worshipTruthy_(r.active));
+  const roleMap={};
+  roles.forEach(r=>roleMap[String(r.role_id)]=r);
   const table=worshipReadTable_(ss,WORSHIP_API.SHEETS.ASSIGNMENTS);
-  table.objects.forEach(r=>{ if(worshipIsoDate_(r.event_date)===date&&String(r.role_id)===roleId&&worshipTruthy_(r.active)){r.active=false;r.updated_at=now;table.dirty=true;} });
-  if(!memberIds.length){ table.objects.push({assignment_id:worshipId_('a'),event_date:date,role_id:roleId,member_id:'',sort_order:0,source:'manual_clear',active:true,updated_at:now}); table.dirty=true; }
-  else memberIds.forEach((memberId,i)=>{table.objects.push({assignment_id:worshipId_('a'),event_date:date,role_id:roleId,member_id:memberId,sort_order:i+1,source:'manual',active:true,updated_at:now});table.dirty=true;});
+  worshipApplyAssignmentTable_(table,roleMap,p,now);
   worshipWriteTable_(table);
 }
 
 function worshipSetEvent_(ss,p,now) {
-  const date=String(p.date||''); if(!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('일정 날짜가 올바르지 않습니다.');
-  const table=worshipReadTable_(ss,WORSHIP_API.SHEETS.EVENTS); let row=table.objects.find(r=>worshipIsoDate_(r.event_date)===date);
-  if(!row){row={event_date:date,event_type:'worship',title:String(p.title||''),active:!!p.active,source:'manual',updated_at:now};table.objects.push(row);} else {row.event_type=String(row.event_type||'worship');row.title=String(p.title==null?row.title||'':p.title);row.active=!!p.active;row.source='manual';row.updated_at=now;}
-  table.dirty=true; worshipWriteTable_(table);
+  const table=worshipReadTable_(ss,WORSHIP_API.SHEETS.EVENTS);
+  worshipApplyEventTable_(table,p,now);
+  worshipWriteTable_(table);
 }
 
 function worshipSaveMember_(ss,p,now) {
