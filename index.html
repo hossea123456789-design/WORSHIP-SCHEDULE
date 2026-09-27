@@ -84,7 +84,7 @@ main{padding:15px 15px 36px}.panel{display:none}.panel.active{display:block}.sec
 
 const PLAYLIST_ID='PLDThR_8ShZAFTVEZgp2jtZaha8bThHZXB';
 const STORAGE_PREFIX='worship_fast_v3_';
-const APP_VERSION='v3.13.0';
+const APP_VERSION='v3.13.1';
 const BOOTSTRAP_TIMEOUT_MS=25000;
 const MUTATE_TIMEOUT_MS=25000;
 
@@ -519,20 +519,44 @@ async function flushQueue(){
     return;
   }
 
+  const batchableTypes=new Set(['eventSet','assignmentSet']);
+  const first=pending[0];
+  const batchItems=[];
+
+  if(first&&batchableTypes.has(String(first.type||''))){
+    for(let i=0;i<pending.length&&batchItems.length<40;i++){
+      const item=pending[i];
+      if(!item||!batchableTypes.has(String(item.type||'')))break;
+      batchItems.push(item);
+    }
+  }
+
+  const useBatch=batchItems.length>=2;
+  const activeItems=useBatch?batchItems:[first];
+  activeItems.forEach(item=>item.attempts=Number(item.attempts||0)+1);
+
   flushing=true;
-  const m=pending[0];
-  m.attempts=Number(m.attempts||0)+1;
   saveQueue();
-  setProcess('저장 중…','working');
-  logEvent('INFO','SAVE_START',`type=${m.type} attempt=${m.attempts} pending=${pending.length}`);
+
+  const label=useBatch?`${activeItems.length}건 묶음 저장 중…`:'저장 중…';
+  setProcess(label,'working');
+  logEvent(
+    'INFO',
+    useBatch?'SAVE_BATCH_START':'SAVE_START',
+    useBatch
+      ?`count=${activeItems.length} types=${activeItems.map(x=>x.type).join(',')} pending=${pending.length}`
+      :`type=${first.type} attempt=${first.attempts} pending=${pending.length}`
+  );
 
   try{
-    const res=await jsonp('mutate',{payload:JSON.stringify(m)},MUTATE_TIMEOUT_MS);
+    const res=useBatch
+      ?await jsonp('mutateBatch',{payload:JSON.stringify({items:activeItems})},60000)
+      :await jsonp('mutate',{payload:JSON.stringify(first)},MUTATE_TIMEOUT_MS);
 
     if(res&&res.busy){
       flushing=false;
       setProcess('저장 대기…','working');
-      logEvent('INFO','SAVE_BUSY',`type=${m.type}`);
+      logEvent('INFO',useBatch?'SAVE_BATCH_BUSY':'SAVE_BUSY',useBatch?`count=${activeItems.length}`:`type=${first.type}`);
       clearTimeout(retryTimer);
       retryTimer=setTimeout(flushQueue,Math.max(500,Number(res.retryAfterMs||700)));
       return;
@@ -540,14 +564,25 @@ async function flushQueue(){
 
     if(!res||!res.ok)throw new Error((res&&res.error)||'저장에 실패했습니다.');
 
-    pending.shift();
+    pending.splice(0,activeItems.length);
     saveQueue();
     flushing=false;
-    if(STATE&&res.revision!=null){STATE.revision=res.revision;cacheState();}
-    logEvent('INFO','SAVE_OK',`type=${m.type} revision=${res.revision} remaining=${pending.length}`);
 
-    if(m.type==='memberSave')showToast('멤버 저장 완료');
-    if(m.type==='rotationComplete')showToast('이 달 편성 기준 저장 완료');
+    if(STATE&&res.revision!=null){
+      STATE.revision=res.revision;
+      cacheState();
+    }
+
+    logEvent(
+      'INFO',
+      useBatch?'SAVE_BATCH_OK':'SAVE_OK',
+      useBatch
+        ?`count=${activeItems.length} revision=${res.revision} remaining=${pending.length}`
+        :`type=${first.type} revision=${res.revision} remaining=${pending.length}`
+    );
+
+    if(!useBatch&&first.type==='memberSave')showToast('멤버 저장 완료');
+    if(!useBatch&&first.type==='rotationComplete')showToast('기본값 저장 완료');
 
     if(pending.length){
       flushQueue();
@@ -556,22 +591,30 @@ async function flushQueue(){
 
     setProcess('연결 완료','ok');
 
-    // 서버 생성 ID/구조 변화 또는 로테이션 스냅샷은 백그라운드에서 재동기화합니다.
-    // 실패해도 저장 성공 상태를 오류로 덮지 않고, pollRevision에서 성공할 때까지 다시 시도합니다.
-    if((m.type==='memberSave'&&!m.payload.memberId)||['memberDelete','roleSave','roleDelete','prayerOrderSet','rotationComplete'].includes(m.type)){
+    if(!useBatch&&(
+      (first.type==='memberSave'&&!first.payload.memberId)||
+      ['memberDelete','roleSave','roleDelete','prayerOrderSet','rotationComplete'].includes(first.type)
+    )){
       needsFullRefresh=true;
-      logEvent('INFO','POST_SAVE_REFRESH',`type=${m.type}`);
+      logEvent('INFO','POST_SAVE_REFRESH',`type=${first.type}`);
       setTimeout(()=>bootstrap(false,true),250);
     }
   }catch(e){
     flushing=false;
-    logEvent('ERROR','SAVE_FAIL',`type=${m.type} attempt=${m.attempts} msg=${e&&e.message?e.message:e}`);
+    const attempts=Math.max(...activeItems.map(x=>Number(x.attempts||0)));
+    const msg=e&&e.message?e.message:String(e);
+
+    logEvent(
+      'ERROR',
+      useBatch?'SAVE_BATCH_FAIL':'SAVE_FAIL',
+      useBatch
+        ?`count=${activeItems.length} attempt=${attempts} msg=${msg}`
+        :`type=${first.type} attempt=${attempts} msg=${msg}`
+    );
 
     if(isHardConnectionError(e)){
-      // 서버 진입 자체가 실패한 경우 저장 요청을 반복해서 두드리지 않습니다.
-      // pending은 유지하고 revision 헬스체크가 성공한 뒤에만 저장을 재개합니다.
       hardConnectionDown=true;
-      m.attempts=0;
+      activeItems.forEach(x=>x.attempts=0);
       saveQueue();
       setProcess('서버 연결 끊김 · 저장 보류','offline');
       const now=Date.now();
@@ -584,20 +627,20 @@ async function flushQueue(){
       return;
     }
 
-    if(Number(m.attempts||0)<3){
-      setProcess('저장 재시도…','working');
+    if(attempts<3){
+      setProcess(useBatch?'묶음 저장 재시도…':'저장 재시도…','working');
       clearTimeout(retryTimer);
-      retryTimer=setTimeout(flushQueue,900*Number(m.attempts||1));
+      retryTimer=setTimeout(flushQueue,900*Math.max(1,attempts));
       return;
     }
 
-    pending.shift();
+    // 저장 항목은 버리지 않습니다. 사용자가 다시 열거나 연결이 회복되면 그대로 재시도합니다.
+    activeItems.forEach(x=>x.attempts=0);
     saveQueue();
-    setProcess('저장 실패','error',e&&e.message?e.message:String(e));
-    showToast('저장 실패 · 설정에서 로그를 복사해 주세요');
-
-    // 실패한 낙관 변경을 서버/캐시 기준으로 되돌리되 저장 실패 상태는 유지합니다.
-    bootstrap(false,true);
+    setProcess('저장 보류 · 다시 시도 예정','error',msg);
+    showToast('저장 내용은 보류했습니다 · 연결 회복 후 다시 저장합니다');
+    clearTimeout(retryTimer);
+    retryTimer=setTimeout(flushQueue,15000);
   }
 }
 
