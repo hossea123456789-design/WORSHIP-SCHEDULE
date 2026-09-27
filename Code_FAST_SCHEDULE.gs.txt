@@ -1,5 +1,5 @@
 /**
- * WORSHIP-SCHEDULE standalone Apps Script backend - optimized schedule-only v3.13.0
+ * WORSHIP-SCHEDULE standalone Apps Script backend - optimized schedule-only v3.13.1
  * - Maple DB와 완전히 분리된 찬양팀 전용 프로젝트용
  * - GET: bootstrap / revision / mutate(JSONP)
  * - 일정 전용: Drive/악보 업로드 코드 없음
