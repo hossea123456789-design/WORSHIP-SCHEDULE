@@ -1,5 +1,5 @@
 /**
- * WORSHIP-SCHEDULE standalone Apps Script backend - optimized schedule-only v3.14.0
+ * WORSHIP-SCHEDULE standalone Apps Script backend - optimized schedule-only v3.16.0
  * - Maple DB와 완전히 분리된 찬양팀 전용 프로젝트용
  * - GET: bootstrap / revision / mutate(JSONP)
  * - 일정 전용: Drive/악보 업로드 코드 없음
@@ -9,10 +9,14 @@
 const WORSHIP_API = Object.freeze({
   TZ: 'Asia/Seoul',
   DB_PROP: 'WORSHIP_SPREADSHEET_ID',
-  CACHE_KEY: 'WORSHIP_BOOTSTRAP_V35',
-  CACHE_SECONDS: 300,
-  REV_CACHE_KEY: 'WORSHIP_REVISION_V1',
-  REV_CACHE_SECONDS: 300,
+  CACHE_KEY: 'WORSHIP_BOOTSTRAP_V36',
+  CACHE_SECONDS: 21600,
+  REV_CACHE_KEY: 'WORSHIP_REVISION_V2',
+  REV_CACHE_SECONDS: 21600,
+  SNAPSHOT_PREFIX: 'WORSHIP_SNAPSHOT_V1_',
+  SNAPSHOT_COUNT_PROP: 'WORSHIP_SNAPSHOT_V1_COUNT',
+  SNAPSHOT_REV_PROP: 'WORSHIP_SNAPSHOT_V1_REV',
+  SNAPSHOT_CHUNK_SIZE: 8000,
   LOG_KEEP: 1500,
   SHEETS: Object.freeze({
     CONFIG: 'CONFIG',
@@ -114,31 +118,235 @@ function worshipOutput_(data, callback) {
   return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
 }
 
-function worshipBootstrap_() {
-  const cache = CacheService.getScriptCache();
-  try { const cached = cache.get(WORSHIP_API.CACHE_KEY); if (cached) return { ok: true, data: JSON.parse(cached) }; } catch (_) {}
-  const ss = worshipDb_();
+function worshipBuildBootstrapData_(ss) {
   const configRows = worshipReadTable_(ss, WORSHIP_API.SHEETS.CONFIG).objects;
   const config = {};
   configRows.forEach(r => { config[String(r.key || '')] = String(r.value == null ? '' : r.value); });
-  const data = {
+
+  return {
     revision: Number(config.STATE_REVISION || 1),
     serverToday: Utilities.formatDate(new Date(), WORSHIP_API.TZ, 'yyyy-MM-dd'),
     config,
-    roles: worshipReadTable_(ss, WORSHIP_API.SHEETS.ROLES).objects.filter(r => worshipTruthy_(r.active)).sort((a,b)=>worshipNum_(a.display_order)-worshipNum_(b.display_order)),
-    members: worshipReadTable_(ss, WORSHIP_API.SHEETS.MEMBERS).objects.filter(r => worshipTruthy_(r.active)).sort((a,b)=>worshipNum_(a.display_order)-worshipNum_(b.display_order)),
-    memberRoles: worshipReadTable_(ss, WORSHIP_API.SHEETS.MEMBER_ROLES).objects.filter(r => worshipTruthy_(r.active)),
+    roles: worshipReadTable_(ss, WORSHIP_API.SHEETS.ROLES).objects
+      .filter(r => worshipTruthy_(r.active))
+      .sort((a,b)=>worshipNum_(a.display_order)-worshipNum_(b.display_order)),
+    members: worshipReadTable_(ss, WORSHIP_API.SHEETS.MEMBERS).objects
+      .filter(r => worshipTruthy_(r.active))
+      .sort((a,b)=>worshipNum_(a.display_order)-worshipNum_(b.display_order)),
+    memberRoles: worshipReadTable_(ss, WORSHIP_API.SHEETS.MEMBER_ROLES).objects
+      .filter(r => worshipTruthy_(r.active)),
     events: worshipReadTable_(ss, WORSHIP_API.SHEETS.EVENTS).objects,
-    assignments: worshipReadTable_(ss, WORSHIP_API.SHEETS.ASSIGNMENTS).objects.filter(r => worshipTruthy_(r.active)),
-    prayerOrder: worshipReadTable_(ss, WORSHIP_API.SHEETS.PRAYER_ORDER).objects.filter(r => worshipTruthy_(r.active)).sort((a,b)=>worshipNum_(a.position)-worshipNum_(b.position)),
-    rotationBase: worshipReadTable_(ss, WORSHIP_API.SHEETS.ROTATION_BASE).objects.filter(r => worshipTruthy_(r.active)),
+    assignments: worshipReadTable_(ss, WORSHIP_API.SHEETS.ASSIGNMENTS).objects
+      .filter(r => worshipTruthy_(r.active)),
+    prayerOrder: worshipReadTable_(ss, WORSHIP_API.SHEETS.PRAYER_ORDER).objects
+      .filter(r => worshipTruthy_(r.active))
+      .sort((a,b)=>worshipNum_(a.position)-worshipNum_(b.position)),
+    rotationBase: worshipReadTable_(ss, WORSHIP_API.SHEETS.ROTATION_BASE).objects
+      .filter(r => worshipTruthy_(r.active)),
     holidays: worshipReadTable_(ss, WORSHIP_API.SHEETS.HOLIDAYS).objects
   };
+}
+
+function worshipWriteSnapshot_(data) {
+  if (!data || typeof data !== 'object') return false;
+  const json = JSON.stringify(data);
+  const size = WORSHIP_API.SNAPSHOT_CHUNK_SIZE;
+  const chunks = [];
+  for (let i = 0; i < json.length; i += size) chunks.push(json.slice(i, i + size));
+
+  const props = PropertiesService.getScriptProperties();
+  const oldCount = Number(props.getProperty(WORSHIP_API.SNAPSHOT_COUNT_PROP) || 0);
+  const values = {};
+  chunks.forEach((chunk, i) => { values[WORSHIP_API.SNAPSHOT_PREFIX + i] = chunk; });
+  values[WORSHIP_API.SNAPSHOT_COUNT_PROP] = String(chunks.length);
+  values[WORSHIP_API.SNAPSHOT_REV_PROP] = String(Number(data.revision || 1));
+  props.setProperties(values, false);
+
+  for (let i = chunks.length; i < oldCount; i++) {
+    props.deleteProperty(WORSHIP_API.SNAPSHOT_PREFIX + i);
+  }
+
   try {
-  cache.put(WORSHIP_API.CACHE_KEY, JSON.stringify(data), WORSHIP_API.CACHE_SECONDS);
-  cache.put(WORSHIP_API.REV_CACHE_KEY, String(data.revision || 1), WORSHIP_API.REV_CACHE_SECONDS);
-} catch (_) {}
-return { ok: true, data };
+    const cache = CacheService.getScriptCache();
+    cache.put(WORSHIP_API.CACHE_KEY, json, WORSHIP_API.CACHE_SECONDS);
+    cache.put(WORSHIP_API.REV_CACHE_KEY, String(Number(data.revision || 1)), WORSHIP_API.REV_CACHE_SECONDS);
+  } catch (_) {}
+  return true;
+}
+
+function worshipReadSnapshot_() {
+  const cache = CacheService.getScriptCache();
+  try {
+    const cached = cache.get(WORSHIP_API.CACHE_KEY);
+    if (cached) return JSON.parse(cached);
+  } catch (_) {}
+
+  const props = PropertiesService.getScriptProperties();
+  const count = Number(props.getProperty(WORSHIP_API.SNAPSHOT_COUNT_PROP) || 0);
+  if (!count || count < 1 || count > 100) return null;
+
+  let json = '';
+  for (let i = 0; i < count; i++) {
+    const part = props.getProperty(WORSHIP_API.SNAPSHOT_PREFIX + i);
+    if (part == null) return null;
+    json += part;
+  }
+
+  try {
+    const data = JSON.parse(json);
+    if (!data || typeof data !== 'object') return null;
+    try { cache.put(WORSHIP_API.CACHE_KEY, json, WORSHIP_API.CACHE_SECONDS); } catch (_) {}
+    return data;
+  } catch (_) {
+    return null;
+  }
+}
+
+function worshipClearSnapshot_() {
+  const props = PropertiesService.getScriptProperties();
+  const count = Number(props.getProperty(WORSHIP_API.SNAPSHOT_COUNT_PROP) || 0);
+  for (let i = 0; i < count; i++) props.deleteProperty(WORSHIP_API.SNAPSHOT_PREFIX + i);
+  props.deleteProperty(WORSHIP_API.SNAPSHOT_COUNT_PROP);
+  try { CacheService.getScriptCache().remove(WORSHIP_API.CACHE_KEY); } catch (_) {}
+}
+
+function worshipPatchSnapshotAfterMutations_(mutations, revision, now) {
+  const items = Array.isArray(mutations) ? mutations : [];
+  const data = worshipReadSnapshot_();
+  if (!data) return false;
+
+  if (Number(data.revision || 0) !== Number(revision) - 1) {
+    worshipClearSnapshot_();
+    return false;
+  }
+
+  const supported = new Set(['assignmentSet', 'eventSet', 'rotationSnapshotSet']);
+  if (items.some(m => !m || !supported.has(String(m.type || '')))) {
+    worshipClearSnapshot_();
+    return false;
+  }
+
+  data.assignments = Array.isArray(data.assignments) ? data.assignments : [];
+  data.events = Array.isArray(data.events) ? data.events : [];
+  data.rotationBase = Array.isArray(data.rotationBase) ? data.rotationBase : [];
+  data.config = data.config || {};
+
+  items.forEach(m => {
+    const type = String(m.type || '');
+    const p = m.payload || {};
+
+    if (type === 'assignmentSet') {
+      const date = String(p.date || '');
+      const roleId = String(p.roleId || '');
+      const memberIds = Array.isArray(p.memberIds)
+        ? [...new Set(p.memberIds.map(String).filter(Boolean))]
+        : [];
+
+      data.assignments = data.assignments.filter(row => !(
+        worshipIsoDate_(row.event_date) === date &&
+        String(row.role_id) === roleId
+      ));
+
+      if (!memberIds.length) {
+        data.assignments.push({
+          assignment_id: 'snapshot_' + Utilities.getUuid().replace(/-/g,'').slice(0,16),
+          event_date: date,
+          role_id: roleId,
+          member_id: '',
+          sort_order: 0,
+          source: 'manual_clear',
+          active: true,
+          updated_at: now
+        });
+      } else {
+        memberIds.forEach((memberId, index) => {
+          data.assignments.push({
+            assignment_id: 'snapshot_' + Utilities.getUuid().replace(/-/g,'').slice(0,16),
+            event_date: date,
+            role_id: roleId,
+            member_id: memberId,
+            sort_order: index + 1,
+            source: 'manual',
+            active: true,
+            updated_at: now
+          });
+        });
+      }
+    }
+
+    if (type === 'eventSet') {
+      const date = String(p.date || '');
+      let row = data.events.find(x => worshipIsoDate_(x.event_date) === date);
+      if (!row) {
+        row = {
+          event_date: date,
+          event_type: 'worship',
+          title: String(p.title || ''),
+          active: !!p.active,
+          source: 'manual',
+          updated_at: now
+        };
+        data.events.push(row);
+      } else {
+        row.event_type = String(row.event_type || 'worship');
+        row.title = String(p.title == null ? row.title || '' : p.title);
+        row.active = !!p.active;
+        row.source = 'manual';
+        row.updated_at = now;
+      }
+    }
+
+    if (type === 'rotationSnapshotSet') {
+      const month = String(p.month || '');
+      data.rotationBase = data.rotationBase.filter(r => String(r.base_month || '') !== month);
+      const slots = Array.isArray(p.slots) ? p.slots : [];
+      slots.forEach(slot => {
+        const eventIndex = Number(slot && slot.eventIndex || 0);
+        const roleId = String(slot && slot.roleId || '');
+        const memberIds = Array.isArray(slot && slot.memberIds)
+          ? [...new Set(slot.memberIds.map(String).filter(Boolean))]
+          : [];
+        memberIds.forEach((memberId, order) => {
+          data.rotationBase.push({
+            base_month: month,
+            event_index: eventIndex,
+            role_id: roleId,
+            member_id: memberId,
+            sort_order: order + 1,
+            active: true,
+            updated_at: now
+          });
+        });
+      });
+    }
+  });
+
+  data.revision = Number(revision);
+  data.config.STATE_REVISION = String(revision);
+  data.serverToday = Utilities.formatDate(new Date(), WORSHIP_API.TZ, 'yyyy-MM-dd');
+  worshipWriteSnapshot_(data);
+  return true;
+}
+
+function worshipBootstrap_() {
+  const revision = worshipGetRevision_();
+  const snapshot = worshipReadSnapshot_();
+
+  if (snapshot && Number(snapshot.revision || 0) === Number(revision)) {
+    snapshot.serverToday = Utilities.formatDate(new Date(), WORSHIP_API.TZ, 'yyyy-MM-dd');
+    try {
+      CacheService.getScriptCache().put(
+        WORSHIP_API.CACHE_KEY,
+        JSON.stringify(snapshot),
+        WORSHIP_API.CACHE_SECONDS
+      );
+    } catch (_) {}
+    return { ok: true, data: snapshot, source: 'snapshot' };
+  }
+
+  const data = worshipBuildBootstrapData_(worshipDb_());
+  worshipWriteSnapshot_(data);
+  return { ok: true, data, source: 'sheets' };
 }
 
 function worshipGetRevision_() {
@@ -148,11 +356,20 @@ function worshipGetRevision_() {
     if (cached !== null && cached !== '') return Number(cached || 1);
   } catch (_) {}
 
+  const props = PropertiesService.getScriptProperties();
+  const persisted = props.getProperty(WORSHIP_API.SNAPSHOT_REV_PROP);
+  if (persisted !== null && persisted !== '') {
+    const revision = Number(persisted || 1);
+    try { cache.put(WORSHIP_API.REV_CACHE_KEY, String(revision), WORSHIP_API.REV_CACHE_SECONDS); } catch (_) {}
+    return revision;
+  }
+
   const ss = worshipDb_();
   const sheet = ss.getSheetByName(WORSHIP_API.SHEETS.CONFIG);
   if (!sheet) throw new Error('필수 시트가 없습니다: ' + WORSHIP_API.SHEETS.CONFIG);
   const lastRow = sheet.getLastRow();
   let revision = 1;
+
   if (lastRow >= 2) {
     const rows = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
     for (let i = 0; i < rows.length; i++) {
@@ -162,10 +379,11 @@ function worshipGetRevision_() {
       }
     }
   }
+
+  props.setProperty(WORSHIP_API.SNAPSHOT_REV_PROP, String(revision));
   try { cache.put(WORSHIP_API.REV_CACHE_KEY, String(revision), WORSHIP_API.REV_CACHE_SECONDS); } catch (_) {}
   return revision;
 }
-
 
 function worshipMutateBatch_(batch) {
   const items = batch && Array.isArray(batch.items) ? batch.items : [];
@@ -233,11 +451,14 @@ function worshipMutateBatch_(batch) {
     worshipAppendMutationLogs_(ss, applied, now);
     SpreadsheetApp.flush();
 
-    const scriptCache = CacheService.getScriptCache();
-    scriptCache.remove(WORSHIP_API.CACHE_KEY);
-    try {
-      scriptCache.put(WORSHIP_API.REV_CACHE_KEY, String(revision), WORSHIP_API.REV_CACHE_SECONDS);
-    } catch (_) {}
+    const patched = worshipPatchSnapshotAfterMutations_(applied, revision, now);
+    if (!patched) {
+      worshipClearSnapshot_();
+      PropertiesService.getScriptProperties().setProperty(WORSHIP_API.SNAPSHOT_REV_PROP, String(revision));
+      try {
+        CacheService.getScriptCache().put(WORSHIP_API.REV_CACHE_KEY, String(revision), WORSHIP_API.REV_CACHE_SECONDS);
+      } catch (_) {}
+    }
 
     return {
       ok: true,
@@ -401,10 +622,19 @@ function worshipMutate_(mutation) {
     const revision = worshipIncrementRevision_(ss, now);
     worshipAppendMutationLog_(ss, mutationId, clientId, type, now);
     SpreadsheetApp.flush();
-    const scriptCache = CacheService.getScriptCache();
-  scriptCache.remove(WORSHIP_API.CACHE_KEY);
-  try { scriptCache.put(WORSHIP_API.REV_CACHE_KEY, String(revision), WORSHIP_API.REV_CACHE_SECONDS); } catch (_) {}
-  return { ok:true, revision, structural };
+    const patched = worshipPatchSnapshotAfterMutations_(
+      [{ type, payload }],
+      revision,
+      now
+    );
+    if (!patched) {
+      worshipClearSnapshot_();
+      PropertiesService.getScriptProperties().setProperty(WORSHIP_API.SNAPSHOT_REV_PROP, String(revision));
+      try {
+        CacheService.getScriptCache().put(WORSHIP_API.REV_CACHE_KEY, String(revision), WORSHIP_API.REV_CACHE_SECONDS);
+      } catch (_) {}
+    }
+    return { ok:true, revision, structural };
   } catch(err) {
     console.error(err && err.stack ? err.stack : err);
     return { ok:false, error:String(err && err.message ? err.message : err) };
@@ -555,25 +785,60 @@ function worshipEffectiveMemberIds_(date,roleId,month,monthDates,assignments,rot
 
 function worshipMutationAlreadyApplied_(ss,mutationId) { const sheet=ss.getSheetByName(WORSHIP_API.SHEETS.MUTATION_LOG); if(!sheet||sheet.getLastRow()<2)return false; const count=Math.min(Math.max(sheet.getLastRow()-1,0),WORSHIP_API.LOG_KEEP); if(!count)return false; const start=sheet.getLastRow()-count+1, values=sheet.getRange(start,1,count,1).getDisplayValues(); return values.some(r=>String(r[0])===mutationId); }
 function worshipAppendMutationLog_(ss,mutationId,clientId,type,now) { const sheet=ss.getSheetByName(WORSHIP_API.SHEETS.MUTATION_LOG); if(!sheet)throw new Error('필수 시트가 없습니다: '+WORSHIP_API.SHEETS.MUTATION_LOG); sheet.appendRow([mutationId,clientId,type,now]); const rows=Math.max(sheet.getLastRow()-1,0); if(rows>WORSHIP_API.LOG_KEEP)sheet.deleteRows(2,rows-WORSHIP_API.LOG_KEEP); }
-function worshipIncrementRevision_(ss,now) { const sheet=ss.getSheetByName(WORSHIP_API.SHEETS.CONFIG); if(!sheet)throw new Error('필수 시트가 없습니다: '+WORSHIP_API.SHEETS.CONFIG); const last=sheet.getLastRow(); if(last>=2){const values=sheet.getRange(2,1,last-1,2).getValues();for(let i=0;i<values.length;i++){if(String(values[i][0])==='STATE_REVISION'){const next=Number(values[i][1]||0)+1;sheet.getRange(i+2,2).setValue(String(next));return next;}}} sheet.appendRow(['STATE_REVISION','1','공용 데이터 변경 버전']); return 1; }
+function worshipIncrementRevision_(ss,now) {
+  const sheet=ss.getSheetByName(WORSHIP_API.SHEETS.CONFIG);
+  if(!sheet)throw new Error('필수 시트가 없습니다: '+WORSHIP_API.SHEETS.CONFIG);
+  const last=sheet.getLastRow();
+  let next=1;
+  if(last>=2){
+    const values=sheet.getRange(2,1,last-1,2).getValues();
+    let found=false;
+    for(let i=0;i<values.length;i++){
+      if(String(values[i][0])==='STATE_REVISION'){
+        next=Number(values[i][1]||0)+1;
+        sheet.getRange(i+2,2).setValue(String(next));
+        found=true;
+        break;
+      }
+    }
+    if(!found)sheet.appendRow(['STATE_REVISION',String(next),'공용 데이터 변경 버전']);
+  }else{
+    sheet.appendRow(['STATE_REVISION',String(next),'공용 데이터 변경 버전']);
+  }
+  PropertiesService.getScriptProperties().setProperty(WORSHIP_API.SNAPSHOT_REV_PROP,String(next));
+  try{CacheService.getScriptCache().put(WORSHIP_API.REV_CACHE_KEY,String(next),WORSHIP_API.REV_CACHE_SECONDS)}catch(_){}
+  return next;
+}
 
 function setupWorshipStandalone() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   if (!ss) throw new Error('찬양팀_DB 스프레드시트에서 확장 프로그램 > Apps Script로 연 뒤 실행해주세요.');
   PropertiesService.getScriptProperties().setProperty(WORSHIP_API.DB_PROP, ss.getId());
   worshipValidateSchema_(ss);
-  // Force the exact Sheets permission the deployed web app will use.
+
   const reopened = SpreadsheetApp.openById(ss.getId());
   reopened.getName();
+  const data = worshipBuildBootstrapData_(reopened);
+  worshipWriteSnapshot_(data);
   SpreadsheetApp.flush();
-  return '일정 백엔드 연결/권한 확인 완료: ' + ss.getName();
+
+  return [
+    '일정 백엔드 연결/권한 확인 완료: ' + ss.getName(),
+    'revision: ' + data.revision,
+    '빠른 스냅샷 캐시: 준비 완료'
+  ].join('\n');
 }
 
 function setWorshipSpreadsheetId(id) {
   const value = String(id || '').trim();
   if (!value) throw new Error('스프레드시트 ID가 비어 있습니다.');
   const ss = SpreadsheetApp.openById(value);
-  PropertiesService.getScriptProperties().setProperty(WORSHIP_API.DB_PROP, ss.getId());
+  const props = PropertiesService.getScriptProperties();
+  props.setProperty(WORSHIP_API.DB_PROP, ss.getId());
+  worshipClearSnapshot_();
+  props.deleteProperty(WORSHIP_API.SNAPSHOT_REV_PROP);
+  const data = worshipBuildBootstrapData_(ss);
+  worshipWriteSnapshot_(data);
   return ss.getName();
 }
 
