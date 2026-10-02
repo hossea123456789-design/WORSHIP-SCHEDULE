@@ -1,0 +1,36 @@
+name: Probe Apps Script 403 Body
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/probe-403-body.yml']
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inspect 403 response text
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import re, urllib.request
+          urls = {
+            'schedule': 'https://script.google.com/macros/s/AKfycbwwYV6CBces0jCFTndl9EoKL_LU7P55TJ2eLrT1qCH0aL-XxZggaPClwz4FuZgZ3KulaQ/exec?app=worship&action=revision&callback=testcb',
+            'score': 'https://script.google.com/macros/s/AKfycbxyjSCotbCTOQ54H3IqutFZM0xQRF-92_bvJWMNcJKWdgqQjGgThiGFBtRmK1LlXObOdQ/exec?action=meta&callback=testcb'
+          }
+          for name,url in urls.items():
+              print('====', name, '====')
+              req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0'})
+              try:
+                  resp=urllib.request.urlopen(req,timeout=20)
+                  body=resp.read().decode('utf-8','replace')
+                  print('status',resp.status,'url',resp.geturl())
+              except Exception as e:
+                  print('error',repr(e))
+                  body=e.read().decode('utf-8','replace') if hasattr(e,'read') else ''
+              title=re.search(r'<title[^>]*>(.*?)</title>',body,re.I|re.S)
+              print('title=',re.sub(r'\s+',' ',title.group(1)).strip() if title else '')
+              cleaned=re.sub(r'<script\b[^>]*>.*?</script>',' ',body,flags=re.I|re.S)
+              cleaned=re.sub(r'<style\b[^>]*>.*?</style>',' ',cleaned,flags=re.I|re.S)
+              cleaned=re.sub(r'<[^>]+>',' ',cleaned)
+              cleaned=re.sub(r'\s+',' ',cleaned)
+              print('text=',cleaned[:1800])
+          PY
