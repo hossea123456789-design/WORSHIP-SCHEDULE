@@ -1,0 +1,30 @@
+name: Probe Live Apps Script APIs
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/probe-live-apis.yml']
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe schedule and score endpoints
+        shell: bash
+        run: |
+          set -u
+          SCHEDULE='https://script.google.com/macros/s/AKfycbwwYV6CBces0jCFTndl9EoKL_LU7P55TJ2eLrT1qCH0aL-XxZggaPClwz4FuZgZ3KulaQ/exec?app=worship&action=revision&callback=testcb&_='$(date +%s)
+          SCORE='https://script.google.com/macros/s/AKfycbxyjSCotbCTOQ54H3IqutFZM0xQRF-92_bvJWMNcJKWdgqQjGgThiGFBtRmK1LlXObOdQ/exec?action=meta&callback=testcb&_='$(date +%s)
+          for name in SCHEDULE SCORE; do
+            eval "url=\$$name"
+            echo "===== $name NO-REDIRECT ====="
+            curl -sS -o /tmp/body -D /tmp/headers --max-time 30 "$url" || true
+            cat /tmp/headers
+            echo "--- body ---"
+            head -c 1200 /tmp/body || true
+            echo
+            echo "===== $name FOLLOW-REDIRECT ====="
+            curl -sS -L -o /tmp/body2 -D /tmp/headers2 --max-time 30 -w '\nFINAL_URL=%{url_effective}\nHTTP=%{http_code}\nTYPE=%{content_type}\nTIME=%{time_total}\n' "$url" || true
+            cat /tmp/headers2
+            echo "--- body2 ---"
+            head -c 1800 /tmp/body2 || true
+            echo
+          done
