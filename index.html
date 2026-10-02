@@ -36,7 +36,11 @@ main{padding:15px 15px 36px}.panel{display:none}.panel.active{display:block}.sec
 .scoreCard{margin-top:12px;overflow:hidden}.scoreHead{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 14px;border-bottom:1px solid var(--line)}.scoreHead h3{margin:0;font-size:13px}.scoreBody{padding:13px}.scoreEmpty{padding:22px 14px;text-align:center;border:1px dashed #d7dae3;border-radius:14px;background:#fafbfe}.scoreEmpty b{display:block;font-size:12px;margin-bottom:5px}.scoreEmpty span{display:block;font-size:9px;color:var(--muted);line-height:1.5}.scoreMeta{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}.scoreName{font-size:12px;font-weight:950;word-break:break-all}.scoreSub{font-size:9px;color:var(--muted);margin-top:3px}.scoreActions{display:flex;gap:6px;flex-wrap:wrap}.scorePreview{position:relative;width:100%;height:62vh;min-height:420px;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#f2f4f7;margin-top:10px}.scorePreview iframe{position:absolute;inset:0;width:100%;height:100%;border:0}.scoreStatus{font-size:10px;color:var(--muted);margin-top:8px}.scoreStatus.error{color:#b42318}.scoreStatus.working{color:var(--accent);font-weight:900}.scoreProgress{margin-top:10px;padding:10px 11px;border-radius:12px;background:#f7f8fc;border:1px solid var(--line)}.scoreProgress[hidden]{display:none}.scoreProgressTop{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px;font-size:9px;font-weight:900;color:#596174}.scoreProgressPct{font-size:11px;color:var(--accent)}.scoreProgressTrack{height:8px;border-radius:999px;background:#e8eaf0;overflow:hidden}.scoreProgressFill{height:100%;width:0;background:var(--accent);border-radius:999px;transition:width .18s ease}.scoreProgressDetail{margin-top:6px;font-size:9px;color:var(--muted);line-height:1.45}.scoreProgress.error .scoreProgressTop,.scoreProgress.error .scoreProgressPct,.scoreProgress.error .scoreProgressDetail{color:#b42318}.scoreProgress.error .scoreProgressFill{background:#d92d20}@media(max-width:520px){.scorePreview{height:58vh;min-height:360px}}
 .bottomNav{position:fixed;left:50%;bottom:0;transform:translateX(-50%);z-index:50;width:min(900px,100%);display:grid;grid-template-columns:repeat(5,1fr);background:rgba(255,255,255,.97);backdrop-filter:blur(18px);border-top:1px solid var(--line);padding:6px 5px calc(6px + env(safe-area-inset-bottom))}.navBtn{border:0;background:transparent;border-radius:12px;padding:7px 2px;color:#989eaa;font-size:8px;font-weight:900}.navBtn span{display:block;font-size:17px;margin-bottom:2px}.navBtn.active{background:var(--accentSoft);color:var(--accent)}
 .modalBackdrop{position:fixed;inset:0;z-index:80;background:rgba(15,23,42,.45);display:none}.modalBackdrop.show{display:block}.sheetModal{position:fixed;left:50%;bottom:0;z-index:90;width:min(900px,100%);max-height:88vh;max-height:88dvh;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;background:#fff;border-radius:22px 22px 0 0;transform:translate(-50%,100%);transition:.2s;box-shadow:0 -20px 60px rgba(0,0,0,.18);padding-bottom:calc(28px + env(safe-area-inset-bottom))}.sheetModal.show{transform:translate(-50%,0)}.modalHead{display:flex;justify-content:space-between;align-items:center;padding:13px 15px;border-bottom:1px solid var(--line);position:sticky;top:0;background:#fff;z-index:2}.modalHead b{font-size:13px}.closeBtn{width:31px;height:31px;border:0;background:#f2f4f8;border-radius:9px;font-weight:950}.modalBody{padding:12px 14px 36px}.pickGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.pickBtn{border:1px solid var(--line);background:#fff;border-radius:11px;padding:11px 8px;font-size:11px;font-weight:900}.pickBtn.selected{background:#171a2b;color:#fff;border-color:#171a2b}.formField{margin-bottom:11px}.formField label{display:block;font-size:10px;font-weight:900;margin-bottom:5px}.formField input,.formField select{width:100%;border:1px solid #d9dde6;border-radius:10px;padding:9px 10px}.checkPill input{display:none}.checkPill span{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:6px 8px;font-size:9px;font-weight:900}.checkPill input:checked+span{background:#171a2b;color:#fff;border-color:#171a2b}.modalActions{display:flex;justify-content:flex-end;gap:6px;margin-top:12px}
-.processStatus{position:fixed;left:50%;bottom:calc(72px + env(safe-area-inset-bottom));z-index:115;transform:translateX(-50%);display:flex;align-items:center;gap:6px;min-height:30px;max-width:calc(100vw - 24px);padding:7px 11px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.97);box-shadow:0 6px 18px rgba(15,23,42,.10);font-size:9px;font-weight:900;color:#596174;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}.processStatus #processStatusText{overflow:hidden;text-overflow:ellipsis}.processStatus .dot{width:7px;height:7px;border-radius:50%;background:#98a2b3}.processStatus.working .dot{background:#5d63e6;animation:pulse 1s ease-in-out infinite}.processStatus.ok .dot{background:#16a36a}.processStatus.error{color:#b42318;border-color:#fecaca;background:#fff7f7}.processStatus.error .dot{background:#d92d20}.processStatus.offline{color:#9a6700;border-color:#fde68a;background:#fffbeb}.processStatus.offline .dot{background:#f59e0b}@keyframes pulse{0%,100%{opacity:.35}50%{opacity:1}}
+.processStatus{position:fixed;left:50%;bottom:calc(72px + env(safe-area-inset-bottom));z-index:115;transform:translateX(-50%);width:min(430px,calc(100vw - 24px));padding:9px 11px 10px;border:1px solid var(--line);border-radius:15px;background:rgba(255,255,255,.98);box-shadow:0 8px 22px rgba(15,23,42,.12);font-size:9px;font-weight:900;color:#596174;pointer-events:none;transition:.2s}
+.processStatusTop{display:flex;align-items:center;gap:7px;min-width:0}.processStatus .dot{width:7px;height:7px;border-radius:50%;background:#98a2b3;flex:0 0 auto}.processStatus #processStatusText{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.processStatusPct{font-size:10px;color:#171a2b;min-width:32px;text-align:right}
+.processTrack{height:5px;margin-top:7px;border-radius:999px;background:#eceef4;overflow:hidden;display:none}.processStatus.hasProgress .processTrack{display:block}.processBar{height:100%;width:0;border-radius:inherit;background:currentColor;transition:width .28s ease}
+.processDetail{display:none;margin-top:5px;font-size:8px;font-weight:800;color:#8a90a0;line-height:1.35;white-space:normal}.processStatus.hasDetail .processDetail{display:block}
+.processStatus.working{color:#5d63e6}.processStatus.working .dot{background:#5d63e6;animation:pulse 1s ease-in-out infinite}.processStatus.ok{color:#16a36a}.processStatus.ok .dot{background:#16a36a}.processStatus.error{color:#b42318;border-color:#fecaca;background:#fff7f7}.processStatus.error .dot{background:#d92d20}.processStatus.offline{color:#9a6700;border-color:#fde68a;background:#fffbeb}.processStatus.offline .dot{background:#f59e0b}@keyframes pulse{0%,100%{opacity:.35}50%{opacity:1}}
 .errorBanner{display:none;margin:0 0 12px;padding:11px 12px;border:1px solid #fecaca;border-radius:13px;background:#fff7f7;color:#9f1c15;font-size:10px;line-height:1.55}.errorBanner.show{display:flex;align-items:center;justify-content:space-between;gap:10px}.errorBanner button{flex:0 0 auto}
 .skeleton{position:relative;overflow:hidden;background:#eef0f4!important;color:transparent!important;border-color:transparent!important}.skeleton:after{content:"";position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,rgba(255,255,255,.65),transparent);animation:shimmer 1.3s infinite}@keyframes shimmer{100%{transform:translateX(100%)}}
 .logMeta{font-size:9px;color:var(--muted);line-height:1.6}.logActions{display:flex;gap:7px;margin-top:10px}.logActions button{flex:1}
@@ -78,13 +82,13 @@ main{padding:15px 15px 36px}.panel{display:none}.panel.active{display:block}.sec
 <nav class="bottomNav"><button class="navBtn active" data-tab="week"><span>🏠</span>이번주</button><button class="navBtn" data-tab="month"><span>📅</span>월별</button><button class="navBtn" data-tab="prayer"><span>🙏</span>기도</button><button class="navBtn" data-tab="playlist"><span>▶️</span>찬양</button><button class="navBtn" data-tab="settings"><span>⚙️</span>설정</button></nav>
 </div>
 <div class="modalBackdrop" id="backdrop"></div><div class="sheetModal" id="modal"><div class="modalHead"><b id="modalTitle"></b><button class="closeBtn" id="closeModal">×</button></div><div class="modalBody" id="modalBody"></div></div>
-<div class="toast" id="toast"></div><div class="processStatus working" id="processStatus"><span class="dot"></span><span id="processStatusText">연결 중…</span></div>
+<div class="toast" id="toast"></div><div class="processStatus working hasProgress hasDetail" id="processStatus"><div class="processStatusTop"><span class="dot"></span><span id="processStatusText">연결 중…</span><strong class="processStatusPct" id="processStatusPct">0%</strong></div><div class="processTrack"><div class="processBar" id="processStatusBar"></div></div><div class="processDetail" id="processStatusDetail">서버 연결을 준비하고 있습니다.</div></div>
 <script>
 'use strict';
 
 const PLAYLIST_ID='PLDThR_8ShZAFTVEZgp2jtZaha8bThHZXB';
 const STORAGE_PREFIX='worship_fast_v3_';
-const APP_VERSION='v3.15.0';
+const APP_VERSION='v3.16.0';
 const BOOTSTRAP_TIMEOUT_MS=25000;
 const MUTATE_TIMEOUT_MS=25000;
 
@@ -157,12 +161,23 @@ function logEvent(level,event,detail){
   writeLogs(a);
   updateLogMeta();
 }
-function setProcess(text,type='ok',detail=''){
+function setProcess(text,type='ok',detail='',progress=null){
   processStatus=text;
   const el=document.getElementById('processStatus');
   const txt=document.getElementById('processStatusText');
-  if(el&&txt){el.className='processStatus '+type;txt.textContent=text;}
-  if(detail)logEvent(type==='error'?'ERROR':'INFO','STATUS',text+' | '+detail);
+  const pct=document.getElementById('processStatusPct');
+  const bar=document.getElementById('processStatusBar');
+  const detailEl=document.getElementById('processStatusDetail');
+  if(el&&txt){
+    const hasProgress=progress!==null&&progress!==undefined&&Number.isFinite(Number(progress));
+    const hasDetail=!!String(detail||'').trim();
+    el.className='processStatus '+type+(hasProgress?' hasProgress':'')+(hasDetail?' hasDetail':'');
+    txt.textContent=text;
+    if(pct)pct.textContent=hasProgress?Math.max(0,Math.min(100,Math.round(Number(progress))))+'%':'';
+    if(bar)bar.style.width=hasProgress?Math.max(0,Math.min(100,Number(progress)))+'%':'0%';
+    if(detailEl)detailEl.textContent=hasDetail?String(detail):'';
+  }
+  if(detail&&(type==='error'||type==='offline'))logEvent(type==='error'?'ERROR':'INFO','STATUS',text+' | '+detail);
 }
 function showConnectionError(message){
   const b=document.getElementById('errorBanner'),t=document.getElementById('errorBannerText');
@@ -395,23 +410,27 @@ function isBeyondHorizon(mk){return monthNum(mk)>monthNum(horizonEndKey())}
 
 let syncProgressTimer=null;
 function stopSyncProgress(){if(syncProgressTimer){clearInterval(syncProgressTimer);syncProgressTimer=null}}
-function setSyncProgress(pct,label,cached=!!STATE){
+function setSyncProgress(pct,label,cached=!!STATE,detail=''){
   const p=Math.max(0,Math.min(100,Math.round(Number(pct)||0)));
-  const prefix=cached?'캐시 데이터 표시 · ':'';
-  setProcess(`${prefix}동기화 ${p}% · ${label}`,p>=100?'ok':'working');
+  const prefix=cached?'캐시 표시 · ':'';
+  const fallbackDetail=cached
+    ?'화면은 캐시로 바로 보여주고, 서버의 최신 변경 여부를 확인하고 있습니다.'
+    :'서버에서 최신 찬양팀 데이터를 불러오고 있습니다.';
+  setProcess(`${prefix}${label}`,p>=100?'ok':'working',detail||fallbackDetail,p);
 }
-function startSyncProgress(cached=!!STATE){
+function startSyncProgress(cached=!!STATE,startPct=null){
   stopSyncProgress();
   const started=performance.now();
-  setSyncProgress(cached?8:5,cached?'서버 최신 데이터 확인':'서버 연결 준비',cached);
+  const initial=startPct==null?(cached?12:6):startPct;
+  setSyncProgress(initial,cached?'서버 최신 버전 확인':'서버 연결 준비',cached);
   syncProgressTimer=setInterval(()=>{
     const sec=(performance.now()-started)/1000;
-    let pct,label;
-    if(sec<1){pct=cached?18:15;label='서버 요청 전송'}
-    else if(sec<3){pct=35+sec*7;label='서버 응답 대기'}
-    else if(sec<7){pct=56+(sec-3)*5;label='일정 데이터 동기화'}
-    else{pct=Math.min(88,76+(sec-7)*2);label='서버 처리 완료 대기'}
-    setSyncProgress(pct,label,cached);
+    let pct,label,detail;
+    if(sec<1){pct=Math.max(initial,20);label='요청 전송 완료';detail='Apps Script에 최신 상태를 요청했습니다.'}
+    else if(sec<3){pct=Math.max(initial,34+sec*5);label='서버 응답 대기';detail='네트워크와 Apps Script 응답을 기다리고 있습니다.'}
+    else if(sec<7){pct=Math.max(initial,55+(sec-3)*4);label='일정 데이터 확인';detail='변경된 데이터가 있는지 확인하고 있습니다.'}
+    else{pct=Math.max(initial,Math.min(84,72+(sec-7)*1.5));label='서버 처리 완료 대기';detail='응답이 늦어지고 있지만 현재 화면은 캐시로 계속 사용할 수 있습니다.'}
+    setSyncProgress(pct,label,cached,detail);
   },500);
 }
 
@@ -463,7 +482,7 @@ async function bootstrap(showLoading=true,silentFailure=false){
     const res=await jsonp('bootstrap',{},BOOTSTRAP_TIMEOUT_MS,{background:silentFailure});
     if(!res||!res.ok)throw new Error((res&&res.error)||'초기 데이터를 불러오지 못했습니다.');
 
-    if(!silentFailure)setSyncProgress(92,'서버 응답 수신',hadState);
+    if(!silentFailure)setSyncProgress(88,'최신 데이터 수신',hadState,'서버에서 최신 데이터 묶음을 받았습니다.');
     STATE=res.data;
     readFailureStreak=0;
     hardConnectionDown=false;
@@ -472,19 +491,19 @@ async function bootstrap(showLoading=true,silentFailure=false){
     reconnectTimer=null;
     migrateLegacyEventQueue_();
     pending.forEach(applyOptimistic);
-    if(!silentFailure)setSyncProgress(96,'로컬 캐시 갱신',hadState);
+    if(!silentFailure)setSyncProgress(94,'기기 캐시 갱신',hadState,'다음 실행을 빠르게 하기 위해 최신 데이터를 기기에 저장하고 있습니다.');
     cacheState();
     needsFullRefresh=false;
 
     const today=new Date((STATE.serverToday||keyOf(new Date()))+'T00:00:00');
     if(!viewMonth)viewMonth=new Date(today.getFullYear(),today.getMonth(),1);
 
-    if(!silentFailure)setSyncProgress(99,'화면 갱신',hadState);
+    if(!silentFailure)setSyncProgress(98,'화면 반영',hadState,'월별 편성·기도·설정 화면에 최신 데이터를 적용하고 있습니다.');
     renderAll();
     clearConnectionError();
     if(!silentFailure){
       stopSyncProgress();
-      setSyncProgress(100,'최신 데이터 반영 완료',false);
+      setSyncProgress(100,'최신 상태 확인 완료',false,'서버와 현재 화면의 데이터가 일치합니다.');
       setTimeout(()=>{if(!readInFlight&&!flushing&&!pending.length)setProcess('연결 완료','ok')},900);
     }else if(['동기화 중…','연결 중…','오프라인','동기화 실패 · 캐시 사용'].includes(processStatus)){
       setProcess('연결 완료','ok');
@@ -971,7 +990,7 @@ async function saveMonthDraft(){
 
   monthSaveBusy=true;
   renderMonth();
-  setProcess(`현재 월 ${changes.length}건 저장 중…`,'working');
+  setProcess(`현재 월 ${changes.length}건 저장 중`,'working','사람 편성 변경사항을 한 번의 묶음 요청으로 저장하고 있습니다.',25);
   logEvent('INFO','MONTH_SAVE_START',`month=${monthDraftMonth} count=${changes.length}`);
 
   const items=changes.map(x=>({
@@ -1000,7 +1019,7 @@ async function saveMonthDraft(){
     monthSaveBusy=false;
     renderMonth();
     renderWeek();
-    setProcess('저장 완료','ok');
+    setProcess('저장 완료','ok','현재 월 사람 편성이 서버에 반영되었습니다.',100);
     showToast(`현재 월 ${savedCount}건 저장 완료`);
     logEvent('INFO','MONTH_SAVE_OK',`count=${savedCount} revision=${res.revision}`);
 
@@ -1078,7 +1097,7 @@ async function saveMonthAsDefault(){
 
   monthSaveBusy=true;
   renderMonth();
-  setProcess('기본값 저장 중…','working');
+  setProcess('기본값 저장 중','working','현재 월 편성 스냅샷을 이후 달 자동 편성 기준으로 저장하고 있습니다.',25);
   logEvent('INFO','ROTATION_SNAPSHOT_START',`month=${snapshot.month} slots=${snapshot.slots.length}`);
 
   const mutation={
@@ -1100,7 +1119,7 @@ async function saveMonthAsDefault(){
     renderMonth();
     renderWeek();
     renderPrayer();
-    setProcess('기본값 저장 완료','ok');
+    setProcess('기본값 저장 완료','ok','현재 월 편성은 그대로 두고 이후 달 기본값만 갱신했습니다.',100);
     showToast('기본값 저장 완료');
     logEvent('INFO','ROTATION_SNAPSHOT_OK',`month=${snapshot.month} revision=${res.revision}`);
   }catch(e){
@@ -1708,7 +1727,7 @@ async function saveEventDateDraft(){
 
   dateSaveBusy=true;
   renderDateSettings();
-  setProcess(`찬양 일정 ${changed.length}건 저장 중…`,'working');
+  setProcess(`찬양 일정 ${changed.length}건 저장 중`,'working','선택한 날짜 변경사항을 한 번에 서버에 저장하고 있습니다.',25);
   logEvent('INFO','EVENT_DATE_SAVE_START',`month=${mk} count=${changed.length}`);
 
   const items=changed.map(date=>({
@@ -1729,7 +1748,7 @@ async function saveEventDateDraft(){
 
     dateSaveBusy=false;
     renderAll();
-    setProcess('날짜 저장 완료','ok');
+    setProcess('날짜 저장 완료','ok','월별 편성 날짜에 즉시 반영되었습니다.',100);
     showToast('찬양 일정 날짜 저장 완료');
     logEvent('INFO','EVENT_DATE_SAVE_OK',`month=${mk} count=${changed.length} revision=${res.revision}`);
   }catch(e){
@@ -2021,6 +2040,11 @@ async function pollRevision(force=false){
   readInFlight=true;
   let refreshNeeded=false;
   let recovered=false;
+  const showProgress=force&&!flushing&&!dateSaveBusy&&!monthSaveBusy;
+  if(showProgress){
+    stopSyncProgress();
+    setSyncProgress(22,'서버 최신 버전 확인',true,'현재 캐시와 서버 revision을 비교하고 있습니다.');
+  }
 
   try{
     const r=await readApi('revision',{},6000,{background:true,attempts:2});
@@ -2040,8 +2064,14 @@ async function pollRevision(force=false){
       if(Number(r.revision)!==Number(STATE.revision)){
         logEvent('INFO','REMOTE_CHANGE',`local=${STATE.revision} remote=${r.revision}`);
         refreshNeeded=true;
+        if(showProgress)setSyncProgress(46,'새 변경사항 발견',true,`서버 revision ${r.revision}을 확인했습니다. 최신 데이터를 불러옵니다.`);
       }else if(!pending.length&&!flushing){
-        setProcess('연결 완료','ok');
+        if(showProgress){
+          setSyncProgress(100,'최신 상태 확인 완료',false,'서버와 현재 캐시가 동일합니다.');
+          setTimeout(()=>{if(!readInFlight&&!flushing&&!pending.length)setProcess('연결 완료','ok')},900);
+        }else{
+          setProcess('연결 완료','ok');
+        }
       }
     }
   }catch(e){
@@ -2059,8 +2089,14 @@ async function pollRevision(force=false){
   }
 
   if(refreshNeeded&&!pending.length&&!flushing){
-    const ok=await bootstrap(false,true);
-    if(!ok&&STATE)markReadFailure_(new Error('최신 데이터 갱신 실패'));
+    if(showProgress){
+      setSyncProgress(52,'최신 데이터 불러오기',true,'서버의 변경사항을 한 번에 받아오고 있습니다.');
+      const ok=await bootstrap(false,false);
+      if(!ok&&STATE)markReadFailure_(new Error('최신 데이터 갱신 실패'));
+    }else{
+      const ok=await bootstrap(false,true);
+      if(!ok&&STATE)markReadFailure_(new Error('최신 데이터 갱신 실패'));
+    }
   }
 }
 
@@ -2079,15 +2115,15 @@ if(hadCachedState){
 
   if(pending.length){
     hardConnectionDown=true;
-    setProcess('저장 보류 · 서버 확인 중','working');
+    setProcess('저장 보류 · 서버 확인 중','working','저장 대기 내용을 유지한 채 서버 연결을 확인하고 있습니다.',18);
     startupSyncTimer=setTimeout(()=>pollRevision(true),1200);
   }else{
-    setProcess('캐시 표시 · 최신 여부 확인 중','working');
+    setProcess('캐시 표시 · 최신 여부 확인 중','working','화면은 즉시 사용할 수 있고 서버 최신 상태를 확인하고 있습니다.',12);
     startupSyncTimer=setTimeout(()=>pollRevision(true),1200);
   }
 }else{
   viewMonth=new Date(localNow.getFullYear(),localNow.getMonth(),1);
-  setProcess('연결 중…','working');
+  setProcess('서버 연결 중','working','처음 실행이라 서버에서 전체 데이터를 불러옵니다.',5);
   bootstrap(false);
 }
 
