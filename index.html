@@ -88,7 +88,7 @@ main{padding:15px 15px 36px}.panel{display:none}.panel.active{display:block}.sec
 
 const PLAYLIST_ID='PLDThR_8ShZAFTVEZgp2jtZaha8bThHZXB';
 const STORAGE_PREFIX='worship_fast_v3_';
-const APP_VERSION='v3.17.0';
+const APP_VERSION='v3.17.1';
 const BOOTSTRAP_TIMEOUT_MS=25000;
 const MUTATE_TIMEOUT_MS=25000;
 
@@ -125,6 +125,7 @@ let lastReadSuccessAt=0;
 let reconnectTimer=null;
 let lastRevisionCheckAt=0;
 let serverFresh=false;
+let runtimeMonthKey=monthKey(new Date());
 
 function safeGet(k){try{return localStorage.getItem(STORAGE_PREFIX+k)}catch(e){return null}}
 function safeSet(k,v){try{localStorage.setItem(STORAGE_PREFIX+k,v)}catch(e){}}
@@ -567,7 +568,7 @@ async function bootstrap(showLoading=true,silentFailure=false){
     cacheState();
     needsFullRefresh=false;
 
-    const today=new Date((STATE.serverToday||keyOf(new Date()))+'T00:00:00');
+    const today=new Date(currentTodayKey()+'T00:00:00');
     if(!viewMonth)viewMonth=new Date(today.getFullYear(),today.getMonth(),1);
 
     if(!silentFailure)setSyncProgress(98,'화면 반영',hadState,'월별 편성·기도·설정 화면에 최신 데이터를 적용하고 있습니다.');
@@ -962,8 +963,26 @@ function upcomingWorshipDates(count=2){
   return out.sort().slice(0,count);
 }
 
+function syncRuntimeMonth_(){
+  const nowKey=monthKey(new Date(currentTodayKey()+'T00:00:00'));
+  if(nowKey===runtimeMonthKey)return false;
+
+  const oldKey=runtimeMonthKey;
+  runtimeMonthKey=nowKey;
+
+  if(viewMonth&&monthKey(viewMonth)===oldKey){
+    const d=new Date(currentTodayKey()+'T00:00:00');
+    viewMonth=new Date(d.getFullYear(),d.getMonth(),1);
+  }
+
+  dateDraftByMonth={};
+  logEvent('INFO','MONTH_ROLLOVER',`from=${oldKey} to=${nowKey}`);
+  return true;
+}
+
 function renderAll(){
   if(!STATE)return;
+  syncRuntimeMonth_();
   STATE.prayerOrder=Array.isArray(STATE.prayerOrder)?STATE.prayerOrder.filter(x=>x&&typeof x==='object'):[];
   STATE.roles=Array.isArray(STATE.roles)?STATE.roles.filter(Boolean):[];
   STATE.members=Array.isArray(STATE.members)?STATE.members.filter(Boolean):[];
@@ -1860,7 +1879,7 @@ function toggleEventDate(date){
 async function saveEventDateDraft(){
   if(dateSaveBusy||flushing||readInFlight)return;
   if(!requireFreshWrite_('날짜 저장'))return;
-  const now=new Date((STATE.serverToday||keyOf(new Date()))+'T00:00:00');
+  const now=new Date(currentTodayKey()+'T00:00:00');
   const month=new Date(now.getFullYear(),now.getMonth()+dateSettingOffset,1);
   const mk=monthKey(month);
   const draft=getDateDraftSet_(mk);
@@ -1914,7 +1933,7 @@ async function saveEventDateDraft(){
 }
 
 function renderDateSettings(){
-  const now=new Date((STATE.serverToday||keyOf(new Date()))+'T00:00:00');
+  const now=new Date(currentTodayKey()+'T00:00:00');
   const month=new Date(now.getFullYear(),now.getMonth()+dateSettingOffset,1);
   const mk=monthKey(month);
   const selected=getDateDraftSet_(mk);
@@ -2271,7 +2290,7 @@ document.getElementById('todayPill').textContent=`${localNow.getMonth()+1}.${loc
 const hadCachedState=loadCachedState();
 if(hadCachedState){
   serverFresh=false;
-  const today=new Date((STATE.serverToday||keyOf(new Date()))+'T00:00:00');
+  const today=new Date(currentTodayKey()+'T00:00:00');
   viewMonth=new Date(today.getFullYear(),today.getMonth(),1);
   migrateLegacyEventQueue_();
   pending.forEach(applyOptimistic);
@@ -2299,7 +2318,13 @@ renderScore();
 
 // 악보 메타는 일정 revision 확인이 끝난 뒤 순차적으로 자동 확인합니다.
 // 마지막 정상 악보 정보는 즉시 표시하되, 확인 전에는 '등록된 악보 없음'으로 판정하지 않습니다.
-pollTimer=setInterval(()=>pollRevision(false),60000);
+pollTimer=setInterval(()=>{
+  if(STATE){
+    const rolled=syncRuntimeMonth_();
+    if(rolled)renderAll();
+  }
+  pollRevision(false);
+},60000);
 
 window.addEventListener('online',()=>{
   logEvent('INFO','NETWORK','online');
@@ -2319,6 +2344,12 @@ window.addEventListener('offline',()=>{
 
 document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState!=='visible'||!STATE)return;
+  const rolled=syncRuntimeMonth_();
+  if(rolled)renderAll();
+  else{
+    renderHeader();
+    renderDateSettings();
+  }
   if(Date.now()-lastReadSuccessAt>60000)setTimeout(()=>pollRevision(true),500);
 });
 </script>
