@@ -88,7 +88,7 @@ main{padding:15px 15px 36px}.panel{display:none}.panel.active{display:block}.sec
 
 const PLAYLIST_ID='PLDThR_8ShZAFTVEZgp2jtZaha8bThHZXB';
 const STORAGE_PREFIX='worship_fast_v3_';
-const APP_VERSION='v3.16.0';
+const APP_VERSION='v3.17.0';
 const BOOTSTRAP_TIMEOUT_MS=25000;
 const MUTATE_TIMEOUT_MS=25000;
 
@@ -113,6 +113,10 @@ let readInFlight=false;
 let startupSyncTimer=null;
 let SCORE_META=null;
 let scoreBusy=false;
+let scoreMetaLoading=false;
+let scoreMetaState='idle';
+let scoreMetaError='';
+let scoreMetaWarmTimer=null;
 let scoreProgressHideTimer=null;
 let lastHardConnectionToastAt=0;
 let hardConnectionDown=false;
@@ -120,10 +124,76 @@ let readFailureStreak=0;
 let lastReadSuccessAt=0;
 let reconnectTimer=null;
 let lastRevisionCheckAt=0;
+let serverFresh=false;
 
 function safeGet(k){try{return localStorage.getItem(STORAGE_PREFIX+k)}catch(e){return null}}
 function safeSet(k,v){try{localStorage.setItem(STORAGE_PREFIX+k,v)}catch(e){}}
 function safeRemove(k){try{localStorage.removeItem(STORAGE_PREFIX+k)}catch(e){}}
+
+function loadCachedScoreMeta_(){
+  try{
+    const x=JSON.parse(safeGet('score_meta_cache')||'null');
+    if(!x||typeof x!=='object')return false;
+    if(x.knownEmpty===true){
+      SCORE_META=null;
+      scoreMetaState='cached-empty';
+      return true;
+    }
+    if(x.file&&x.file.id){
+      SCORE_META=x.file;
+      scoreMetaState='cached';
+      return true;
+    }
+  }catch(e){}
+  return false;
+}
+function cacheScoreMeta_(){
+  try{
+    safeSet('score_meta_cache',JSON.stringify({
+      file:SCORE_META||null,
+      knownEmpty:!SCORE_META,
+      cachedAt:Date.now()
+    }));
+  }catch(e){}
+}
+function scheduleScoreMetaWarm_(){
+  if(scoreBusy||scoreMetaLoading||scoreMetaState==='loaded')return;
+  clearTimeout(scoreMetaWarmTimer);
+  scoreMetaWarmTimer=setTimeout(()=>loadScoreMeta(true),350);
+}
+function requireFreshWrite_(label='수정'){
+  if(STATE&&serverFresh&&!hardConnectionDown&&!readInFlight)return true;
+  showToast('서버 최신 상태 확인 후 '+label+'할 수 있습니다');
+  logEvent('WARN','WRITE_BLOCKED_STALE',`label=${label} revision=${STATE&&STATE.revision!=null?STATE.revision:''}`);
+  if(STATE&&!readInFlight&&navigator.onLine)pollRevision(true);
+  return false;
+}
+function stashPendingConflict_(reason){
+  if(!pending.length)return 0;
+  let old=[];
+  try{old=JSON.parse(safeGet('conflict_queue')||'[]');if(!Array.isArray(old))old=[]}catch(e){old=[]}
+  const saved=pending.map(x=>({...x,conflictReason:reason,conflictAt:Date.now()}));
+  safeSet('conflict_queue',JSON.stringify([...old,...saved].slice(-100)));
+  const count=pending.length;
+  pending=[];
+  saveQueue();
+  logEvent('WARN','PENDING_QUARANTINED',`count=${count} reason=${reason}`);
+  return count;
+}
+async function handleRevisionConflict_(res,context='저장'){
+  serverFresh=false;
+  const current=res&&res.currentRevision!=null?Number(res.currentRevision):null;
+  logEvent('WARN','REVISION_CONFLICT',`context=${context} local=${STATE&&STATE.revision!=null?STATE.revision:''} remote=${current==null?'':current}`);
+  setProcess('서버 변경 감지 · 최신화 중','working','다른 브라우저/기기에서 더 최신 변경이 확인되어 오래된 상태의 저장을 차단했습니다.',45);
+  const ok=await bootstrap(false,false);
+  if(ok){
+    showToast('최신 데이터를 반영했습니다 · 수정 내용을 다시 확인해주세요');
+    setProcess('최신 데이터 반영 완료','ok','오래된 캐시의 저장은 서버에서 차단되었습니다.',100);
+  }else{
+    showToast('최신 데이터 확인 전까지 저장이 잠깁니다');
+  }
+  return ok;
+}
 function escapeHtml(s){return String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
 function pad(n){return String(n).padStart(2,'0')}
 function keyOf(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())}
@@ -450,6 +520,7 @@ function scheduleReconnect_(reason=''){
 function markReadFailure_(e){
   readFailureStreak=Math.min(readFailureStreak+1,10);
   hardConnectionDown=true;
+  serverFresh=false;
   const msg=e&&e.message?e.message:String(e||'');
   logEvent('WARN','READ_DEGRADED',`streak=${readFailureStreak} msg=${msg}`);
   if(STATE){
@@ -486,6 +557,7 @@ async function bootstrap(showLoading=true,silentFailure=false){
     STATE=res.data;
     readFailureStreak=0;
     hardConnectionDown=false;
+    serverFresh=true;
     lastReadSuccessAt=Date.now();
     clearTimeout(reconnectTimer);
     reconnectTimer=null;
@@ -509,6 +581,7 @@ async function bootstrap(showLoading=true,silentFailure=false){
       setProcess('연결 완료','ok');
     }
     logEvent('INFO',silentFailure?'BOOTSTRAP_BG_OK':'BOOTSTRAP_OK',`ms=${Math.round(performance.now()-started)} revision=${STATE.revision}`);
+    scheduleScoreMetaWarm_();
     return true;
   }catch(e){
     if(STATE){
@@ -532,6 +605,7 @@ async function bootstrap(showLoading=true,silentFailure=false){
 }
 
 function queueMutation(type,payload){
+  if(!requireFreshWrite_('저장'))return;
   if(type==='rotationComplete'&&pending.some(x=>x.type==='rotationComplete'&&String((x.payload||{}).month)===String(payload.month))){
     showToast('이미 편성 저장 처리 중입니다');
     return;
@@ -645,9 +719,22 @@ async function flushQueue(){
   );
 
   try{
+    const expectedRevision=Number(STATE&&STATE.revision||0);
     const res=useBatch
-      ?await jsonp('mutateBatch',{payload:JSON.stringify({items:activeItems})},60000)
-      :await jsonp('mutate',{payload:JSON.stringify(first)},MUTATE_TIMEOUT_MS);
+      ?await jsonp('mutateBatch',{payload:JSON.stringify({items:activeItems,expectedRevision})},60000)
+      :await jsonp('mutate',{payload:JSON.stringify({...first,expectedRevision})},MUTATE_TIMEOUT_MS);
+
+    if(res&&res.conflict){
+      const blocked=activeItems.length;
+      pending.splice(0,blocked);
+      saveQueue();
+      flushing=false;
+      serverFresh=false;
+      logEvent('WARN','SAVE_CONFLICT_BLOCKED',`count=${blocked} local=${expectedRevision} remote=${res.currentRevision}`);
+      showToast('서버에 더 최신 변경이 있어 오래된 저장을 차단했습니다');
+      await handleRevisionConflict_(res,'저장 대기 항목');
+      return;
+    }
 
     if(res&&res.busy){
       flushing=false;
@@ -945,6 +1032,7 @@ function monthDraftInherited(date,roleId){
 }
 function beginMonthEdit(){
   if(monthSaveBusy)return;
+  if(!requireFreshWrite_('월별 편성 수정'))return;
   monthEdit=true;
   monthDraftMonth=monthKey(viewMonth);
   monthDraft={};
@@ -979,6 +1067,7 @@ function setMonthDraftAssignment(date,roleId,memberIds){
 }
 async function saveMonthDraft(){
   if(!monthEdit||monthSaveBusy)return;
+  if(!requireFreshWrite_('월별 편성 저장'))return;
   const changes=Object.values(monthDraft||{});
   if(!changes.length){
     monthEdit=false;
@@ -1001,7 +1090,14 @@ async function saveMonthDraft(){
   }));
 
   try{
-    const res=await jsonp('mutateBatch',{payload:JSON.stringify({items})},60000);
+    const expectedRevision=Number(STATE&&STATE.revision||0);
+    const res=await jsonp('mutateBatch',{payload:JSON.stringify({items,expectedRevision})},60000);
+    if(res&&res.conflict){
+      monthSaveBusy=false;
+      await handleRevisionConflict_(res,'월별 편성');
+      renderMonth();
+      return;
+    }
     if(!res||!res.ok)throw new Error((res&&res.error)||'월 편성 저장에 실패했습니다.');
 
     changes.forEach(x=>applyOptimistic({
@@ -1073,6 +1169,7 @@ function applyRotationSnapshotLocal_(snapshot){
 
 async function saveMonthAsDefault(){
   if(monthSaveBusy||flushing||readInFlight)return;
+  if(!requireFreshWrite_('기본값 저장'))return;
   if(monthEdit&&monthDraftCount()){
     showToast('현재 수정사항을 먼저 저장해 주세요');
     return;
@@ -1104,11 +1201,18 @@ async function saveMonthAsDefault(){
     id:'mu_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2),
     clientId:CLIENT_ID,
     type:'rotationSnapshotSet',
-    payload:snapshot
+    payload:snapshot,
+    expectedRevision:Number(STATE&&STATE.revision||0)
   };
 
   try{
     const res=await jsonp('mutate',{payload:JSON.stringify(mutation)},60000);
+    if(res&&res.conflict){
+      monthSaveBusy=false;
+      await handleRevisionConflict_(res,'기본값');
+      renderMonth();
+      return;
+    }
     if(!res||!res.ok)throw new Error((res&&res.error)||'기본값 저장에 실패했습니다.');
 
     applyRotationSnapshotLocal_(snapshot);
@@ -1155,13 +1259,14 @@ function renderMonth(){
   const editBtn=document.getElementById('monthEdit');
   const rotationSaving=monthSaveBusy;
 
-  completeBtn.disabled=rotationSaving||draftCount>0||flushing||readInFlight;
+  completeBtn.disabled=rotationSaving||draftCount>0||flushing||readInFlight||!serverFresh||hardConnectionDown;
   completeBtn.textContent=rotationSaving?'기본값 저장 중…':'기본값으로 저장';
 
   saveBtn.hidden=!editingThisMonth;
-  saveBtn.disabled=monthSaveBusy||draftCount===0;
+  saveBtn.disabled=monthSaveBusy||draftCount===0||!serverFresh||hardConnectionDown||readInFlight;
   saveBtn.textContent=monthSaveBusy?'저장 중…':(draftCount?`저장(${draftCount})`:'저장');
 
+  editBtn.disabled=!serverFresh||hardConnectionDown||readInFlight;
   editBtn.classList.toggle('on',editingThisMonth);
   editBtn.textContent=editingThisMonth?'취소':'수정';
 
@@ -1360,11 +1465,21 @@ function renderScore(){
   const area=document.getElementById('scoreArea');
   const btn=document.getElementById('scoreUploadBtn');
   if(!area||!btn)return;
-  btn.disabled=scoreBusy;
+
+  const metaPending=scoreMetaLoading||scoreMetaState==='idle'||scoreMetaState==='cached'||scoreMetaState==='cached-empty';
+  btn.disabled=scoreBusy||scoreMetaLoading||scoreMetaState==='idle';
   btn.textContent=scoreBusy?'업로드 중…':(SCORE_META?'+ 새 악보로 교체':'+ 악보 올리기');
 
   if(!SCORE_META){
-    area.innerHTML='<div class="scoreEmpty"><b>등록된 악보가 없습니다</b><span>PDF · PPT · PPTX · DOC · DOCX · JPG · PNG 파일을 올릴 수 있습니다.<br>새 파일을 올리면 이전 악보는 자동 삭제됩니다.</span></div>';
+    if(metaPending){
+      area.innerHTML='<div class="scoreEmpty"><b>악보 최신 여부 확인 중…</b><span>일정 서버 연결 후 현재 등록된 악보를 확인하고 있습니다.<br>확인 전에는 “등록된 악보 없음”으로 판정하지 않습니다.</span></div>';
+      return;
+    }
+    if(scoreMetaState==='error'){
+      area.innerHTML='<div class="scoreEmpty"><b>악보 정보를 확인하지 못했습니다</b><span>'+escapeHtml(scoreMetaError||'악보 서버 연결을 다시 확인하고 있습니다.')+'<br>등록된 악보가 없다는 뜻은 아닙니다.</span></div>';
+      return;
+    }
+    area.innerHTML='<div class="scoreEmpty"><b>등록된 악보가 없습니다</b><span>서버 확인이 완료된 상태입니다.<br>PDF · PPT · PPTX · DOC · DOCX · JPG · PNG 파일을 올릴 수 있습니다.</span></div>';
     return;
   }
 
@@ -1379,7 +1494,12 @@ function renderScore(){
     ?`<div class="scorePreview scoreImagePreview"><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(fileName)}" loading="lazy" onclick="openScoreFullscreen()"></div>`
     :`<div class="scorePreview"><iframe src="${escapeHtml(f.previewUrl||'')}" title="악보 미리보기" loading="lazy" allow="fullscreen"></iframe></div>`;
 
-  area.innerHTML=`<div class="scoreMeta"><div><div class="scoreName">${escapeHtml(fileName)}</div><div class="scoreSub">${escapeHtml(f.updatedAt||'')}${f.size?` · ${formatBytes(f.size)}`:''}</div></div><div class="scoreActions"><a class="ghostBtn" style="text-decoration:none;display:inline-flex;align-items:center" href="${escapeHtml(downloadUrl)}" target="_blank" rel="noopener">다운로드</a><a class="ghostBtn" style="text-decoration:none;display:inline-flex;align-items:center" href="${escapeHtml(f.openUrl||'#')}" target="_blank" rel="noopener">새 창</a><button class="ghostBtn" id="scoreTogglePreview" type="button" onclick="toggleScorePreview()">미리보기 접기</button><button class="ghostBtn" type="button" onclick="openScoreFullscreen()">전체화면</button></div></div>${previewHtml}`;
+  const verifyLabel=scoreMetaState==='loaded'
+    ?''
+    :(scoreMetaState==='error'
+      ?' · 최신 확인 실패(마지막 정상 정보 표시)'
+      :' · 최신 여부 확인 중');
+  area.innerHTML=`<div class="scoreMeta"><div><div class="scoreName">${escapeHtml(fileName)}</div><div class="scoreSub">${escapeHtml(f.updatedAt||'')}${f.size?` · ${formatBytes(f.size)}`:''}${verifyLabel}</div></div><div class="scoreActions"><a class="ghostBtn" style="text-decoration:none;display:inline-flex;align-items:center" href="${escapeHtml(downloadUrl)}" target="_blank" rel="noopener">다운로드</a><a class="ghostBtn" style="text-decoration:none;display:inline-flex;align-items:center" href="${escapeHtml(f.openUrl||'#')}" target="_blank" rel="noopener">새 창</a><button class="ghostBtn" id="scoreTogglePreview" type="button" onclick="toggleScorePreview()">미리보기 접기</button><button class="ghostBtn" type="button" onclick="openScoreFullscreen()">전체화면</button></div></div>${previewHtml}`;
 }
 function scorePost(action,fields={},timeoutMs=45000){
   const requestId='score_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2);
@@ -1440,14 +1560,28 @@ function scorePost(action,fields={},timeoutMs=45000){
 }
 
 async function loadScoreMeta(silent=true){
-  if(scoreBusy)return;
+  if(scoreBusy||scoreMetaLoading)return;
+  scoreMetaLoading=true;
+  scoreMetaState='loading';
+  scoreMetaError='';
+  renderScore();
   try{
     const res=await scoreJsonp('meta',15000);
+    if(!res||res.ok!==true)throw new Error((res&&res.error)||'악보 정보를 불러오지 못했습니다.');
     SCORE_META=res.file||null;
+    scoreMetaState='loaded';
+    scoreMetaError='';
+    cacheScoreMeta_();
     renderScore();
     setScoreStatus('');
   }catch(e){
-    if(!silent)setScoreStatus(e&&e.message?e.message:String(e),'error');
+    scoreMetaState='error';
+    scoreMetaError=e&&e.message?e.message:String(e);
+    renderScore();
+    if(!silent)setScoreStatus(scoreMetaError,'error');
+  }finally{
+    scoreMetaLoading=false;
+    renderScore();
   }
 }
 
@@ -1577,6 +1711,9 @@ async function uploadScoreFile(file){
         },60000);
         if(directRes&&directRes.complete&&directRes.file){
           SCORE_META=directRes.file;
+          scoreMetaState='loaded';
+          scoreMetaError='';
+          cacheScoreMeta_();
           updateScoreProgress(file.size,file.size,startedAt,'업로드 완료');
           renderScore();
           setScoreStatus(directRes.warning?'업로드 완료 · '+directRes.warning:'업로드 완료');
@@ -1597,6 +1734,9 @@ async function uploadScoreFile(file){
           const recovered=metaRes&&metaRes.file;
           if(recovered&&String(recovered.name||'')===String(file.name||'')&&Number(recovered.size||0)===Number(file.size||0)){
             SCORE_META=recovered;
+            scoreMetaState='loaded';
+            scoreMetaError='';
+            cacheScoreMeta_();
             updateScoreProgress(file.size,file.size,startedAt,'업로드 완료');
             renderScore();
             setScoreStatus('업로드 완료');
@@ -1647,6 +1787,9 @@ async function uploadScoreFile(file){
     }
 
     SCORE_META=lastRes.file;
+    scoreMetaState='loaded';
+    scoreMetaError='';
+    cacheScoreMeta_();
     updateScoreProgress(file.size,file.size,startedAt,'업로드 완료');
     renderScore();
     setScoreStatus('업로드 완료');
@@ -1708,6 +1851,7 @@ function dateDraftChangedCount_(mk){
   return count;
 }
 function toggleEventDate(date){
+  if(!requireFreshWrite_('날짜 수정'))return;
   const mk=date.slice(0,7);
   const draft=getDateDraftSet_(mk);
   if(draft.has(date))draft.delete(date); else draft.add(date);
@@ -1715,6 +1859,7 @@ function toggleEventDate(date){
 }
 async function saveEventDateDraft(){
   if(dateSaveBusy||flushing||readInFlight)return;
+  if(!requireFreshWrite_('날짜 저장'))return;
   const now=new Date((STATE.serverToday||keyOf(new Date()))+'T00:00:00');
   const month=new Date(now.getFullYear(),now.getMonth()+dateSettingOffset,1);
   const mk=monthKey(month);
@@ -1738,7 +1883,14 @@ async function saveEventDateDraft(){
   }));
 
   try{
-    const res=await jsonp('mutateBatch',{payload:JSON.stringify({items})},60000);
+    const expectedRevision=Number(STATE&&STATE.revision||0);
+    const res=await jsonp('mutateBatch',{payload:JSON.stringify({items,expectedRevision})},60000);
+    if(res&&res.conflict){
+      dateSaveBusy=false;
+      await handleRevisionConflict_(res,'찬양 일정 날짜');
+      renderDateSettings();
+      return;
+    }
     if(!res||!res.ok)throw new Error((res&&res.error)||'찬양 일정 날짜 저장에 실패했습니다.');
 
     items.forEach(applyOptimistic);
@@ -1769,13 +1921,15 @@ function renderDateSettings(){
   const changedCount=dateDraftChangedCount_(mk);
   const saveBtn=document.getElementById('saveEventDates');
   if(saveBtn){
-    saveBtn.disabled=dateSaveBusy||changedCount===0;
+    saveBtn.disabled=dateSaveBusy||changedCount===0||!serverFresh||hardConnectionDown||readInFlight;
     saveBtn.textContent=dateSaveBusy?'저장 중…':(changedCount?`날짜 저장(${changedCount})`:'날짜 저장');
   }
   const hint=document.getElementById('dateSettingHint');
-  if(hint)hint.textContent=changedCount
-    ?`현재 ${changedCount}건 변경됨 · 저장 전에는 월별 편성에 반영되지 않습니다.`
-    :'날짜를 자유롭게 선택/해제한 뒤 날짜 저장을 한 번만 누르세요.';
+  if(hint)hint.textContent=!serverFresh
+    ?'서버 최신 상태 확인 중 · 오래된 캐시는 편집하지 않도록 잠겨 있습니다.'
+    :(changedCount
+      ?`현재 ${changedCount}건 변경됨 · 저장 전에는 월별 편성에 반영되지 않습니다.`
+      :'날짜를 자유롭게 선택/해제한 뒤 날짜 저장을 한 번만 누르세요.');
   const hol=holidayMap();
 
   const y=month.getFullYear();
@@ -1793,7 +1947,7 @@ function renderDateSettings(){
     const date=keyOf(d);
     const h=hol[date];
 
-    html+=`<button class="dateCell ${d.getDay()===0?'sun':''} ${selected.has(date)?'selected':''} ${h?'holiday':''}" onclick="toggleEventDate('${date}')">
+    html+=`<button class="dateCell ${d.getDay()===0?'sun':''} ${selected.has(date)?'selected':''} ${h?'holiday':''}" ${!serverFresh?'disabled':''} onclick="toggleEventDate('${date}')">
       ${day}${h?`<small>${escapeHtml(h.name)}</small>`:''}
     </button>`;
   }
@@ -2024,7 +2178,7 @@ document.querySelectorAll('.navBtn').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('.navBtn').forEach(x=>x.classList.toggle('active',x===b));
   document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));
   document.getElementById('tab-'+b.dataset.tab).classList.add('active');
-  if(b.dataset.tab==='playlist'&&!SCORE_META&&!scoreBusy)loadScoreMeta(true);
+  if(b.dataset.tab==='playlist'&&scoreMetaState!=='loaded'&&!scoreMetaLoading&&!scoreBusy)loadScoreMeta(true);
   window.scrollTo({top:0,behavior:'smooth'});
 });
 
@@ -2062,15 +2216,25 @@ async function pollRevision(force=false){
       }
 
       if(Number(r.revision)!==Number(STATE.revision)){
+        serverFresh=false;
         logEvent('INFO','REMOTE_CHANGE',`local=${STATE.revision} remote=${r.revision}`);
         refreshNeeded=true;
+        if(pending.length){
+          const blocked=stashPendingConflict_('remote_revision_'+r.revision);
+          showToast(`서버의 최신 변경 감지 · 오래된 저장 ${blocked}건 자동 실행 차단`);
+        }
         if(showProgress)setSyncProgress(46,'새 변경사항 발견',true,`서버 revision ${r.revision}을 확인했습니다. 최신 데이터를 불러옵니다.`);
-      }else if(!pending.length&&!flushing){
-        if(showProgress){
-          setSyncProgress(100,'최신 상태 확인 완료',false,'서버와 현재 캐시가 동일합니다.');
-          setTimeout(()=>{if(!readInFlight&&!flushing&&!pending.length)setProcess('연결 완료','ok')},900);
-        }else{
-          setProcess('연결 완료','ok');
+      }else{
+        serverFresh=true;
+        renderAll();
+        scheduleScoreMetaWarm_();
+        if(!pending.length&&!flushing){
+          if(showProgress){
+            setSyncProgress(100,'최신 상태 확인 완료',false,'서버와 현재 캐시가 동일합니다.');
+            setTimeout(()=>{if(!readInFlight&&!flushing&&!pending.length)setProcess('연결 완료','ok')},900);
+          }else{
+            setProcess('연결 완료','ok');
+          }
         }
       }
     }
@@ -2081,7 +2245,7 @@ async function pollRevision(force=false){
     readInFlight=false;
   }
 
-  if(recovered&&pending.length&&!flushing){
+  if(recovered&&pending.length&&!flushing&&serverFresh){
     setProcess('서버 연결 복구 · 저장 재개','working');
     clearTimeout(retryTimer);
     retryTimer=setTimeout(flushQueue,100);
@@ -2106,6 +2270,7 @@ document.getElementById('todayPill').textContent=`${localNow.getMonth()+1}.${loc
 
 const hadCachedState=loadCachedState();
 if(hadCachedState){
+  serverFresh=false;
   const today=new Date((STATE.serverToday||keyOf(new Date()))+'T00:00:00');
   viewMonth=new Date(today.getFullYear(),today.getMonth(),1);
   migrateLegacyEventQueue_();
@@ -2122,16 +2287,18 @@ if(hadCachedState){
     startupSyncTimer=setTimeout(()=>pollRevision(true),1200);
   }
 }else{
+  serverFresh=false;
   viewMonth=new Date(localNow.getFullYear(),localNow.getMonth(),1);
   setProcess('서버 연결 중','working','처음 실행이라 서버에서 전체 데이터를 불러옵니다.',5);
   bootstrap(false);
 }
 
 renderPlaylist();
+loadCachedScoreMeta_();
 renderScore();
 
-// 악보 메타는 앱 시작과 동시에 호출하지 않습니다.
-// 찬양 탭에 들어갈 때만 필요 시 불러와 Apps Script 동시 요청을 줄입니다.
+// 악보 메타는 일정 revision 확인이 끝난 뒤 순차적으로 자동 확인합니다.
+// 마지막 정상 악보 정보는 즉시 표시하되, 확인 전에는 '등록된 악보 없음'으로 판정하지 않습니다.
 pollTimer=setInterval(()=>pollRevision(false),60000);
 
 window.addEventListener('online',()=>{
@@ -2144,6 +2311,7 @@ window.addEventListener('online',()=>{
 
 window.addEventListener('offline',()=>{
   logEvent('INFO','NETWORK','offline');
+  serverFresh=false;
   clearTimeout(reconnectTimer);
   reconnectTimer=null;
   setProcess(STATE?'오프라인 · 캐시 사용':'오프라인','offline');

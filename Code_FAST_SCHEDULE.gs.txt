@@ -1,5 +1,5 @@
 /**
- * WORSHIP-SCHEDULE standalone Apps Script backend - optimized schedule-only v3.16.0
+ * WORSHIP-SCHEDULE standalone Apps Script backend - optimized schedule-only v3.17.0
  * - Maple DB와 완전히 분리된 찬양팀 전용 프로젝트용
  * - GET: bootstrap / revision / mutate(JSONP)
  * - 일정 전용: Drive/악보 업로드 코드 없음
@@ -387,6 +387,7 @@ function worshipGetRevision_() {
 
 function worshipMutateBatch_(batch) {
   const items = batch && Array.isArray(batch.items) ? batch.items : [];
+  const expectedRevision = Number(batch && batch.expectedRevision);
   if (!items.length) throw new Error('묶음 저장 항목이 없습니다.');
   if (items.length > 60) throw new Error('한 번에 저장할 수 있는 변경은 최대 60건입니다.');
 
@@ -402,6 +403,25 @@ function worshipMutateBatch_(batch) {
 
   try {
     const ss = worshipDb_();
+    const currentRevision = worshipGetRevision_();
+    if (!Number.isFinite(expectedRevision) || expectedRevision <= 0) {
+      return {
+        ok: false,
+        conflict: true,
+        currentRevision,
+        error: '오래된 앱의 저장 요청은 차단되었습니다. 최신 앱에서 다시 열어주세요.'
+      };
+    }
+    if (Number(expectedRevision) !== Number(currentRevision)) {
+      return {
+        ok: false,
+        conflict: true,
+        expectedRevision,
+        currentRevision,
+        error: '서버에 더 최신 변경이 있어 오래된 캐시의 저장을 차단했습니다.'
+      };
+    }
+
     const now = worshipNow_();
     const appliedIds = worshipRecentMutationIdSet_(ss);
 
@@ -599,12 +619,31 @@ function worshipMutate_(mutation) {
   const clientId = String(mutation.clientId || '');
   const type = String(mutation.type || '');
   const payload = mutation.payload || {};
+  const expectedRevision = Number(mutation.expectedRevision);
   if (!mutationId || !type) throw new Error('mutation id/type이 없습니다.');
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(1800)) return { ok:true, busy:true, retryAfterMs:900 };
   try {
     const ss = worshipDb_();
-    if (worshipMutationAlreadyApplied_(ss, mutationId)) return { ok:true, revision:worshipGetRevision_(), duplicate:true };
+    const currentRevision = worshipGetRevision_();
+    if (!Number.isFinite(expectedRevision) || expectedRevision <= 0) {
+      return {
+        ok:false,
+        conflict:true,
+        currentRevision,
+        error:'오래된 앱의 저장 요청은 차단되었습니다. 최신 앱에서 다시 열어주세요.'
+      };
+    }
+    if (Number(expectedRevision) !== Number(currentRevision)) {
+      return {
+        ok:false,
+        conflict:true,
+        expectedRevision,
+        currentRevision,
+        error:'서버에 더 최신 변경이 있어 오래된 캐시의 저장을 차단했습니다.'
+      };
+    }
+    if (worshipMutationAlreadyApplied_(ss, mutationId)) return { ok:true, revision:currentRevision, duplicate:true };
     const now = worshipNow_();
     let structural = false;
     switch(type) {
