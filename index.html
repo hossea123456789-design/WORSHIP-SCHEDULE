@@ -84,7 +84,7 @@ main{padding:15px 15px 36px}.panel{display:none}.panel.active{display:block}.sec
 
 const PLAYLIST_ID='PLDThR_8ShZAFTVEZgp2jtZaha8bThHZXB';
 const STORAGE_PREFIX='worship_fast_v3_';
-const APP_VERSION='v3.14.0';
+const APP_VERSION='v3.15.0';
 const BOOTSTRAP_TIMEOUT_MS=25000;
 const MUTATE_TIMEOUT_MS=25000;
 
@@ -112,6 +112,10 @@ let scoreBusy=false;
 let scoreProgressHideTimer=null;
 let lastHardConnectionToastAt=0;
 let hardConnectionDown=false;
+let readFailureStreak=0;
+let lastReadSuccessAt=0;
+let reconnectTimer=null;
+let lastRevisionCheckAt=0;
 
 function safeGet(k){try{return localStorage.getItem(STORAGE_PREFIX+k)}catch(e){return null}}
 function safeSet(k,v){try{localStorage.setItem(STORAGE_PREFIX+k,v)}catch(e){}}
@@ -278,7 +282,32 @@ function worshipIframePost(action,params={},timeout=15000,options={}){
   });
 }
 
+function waitMs_(ms){return new Promise(resolve=>setTimeout(resolve,ms))}
+
+async function readApi(action,params={},timeout=7000,options={}){
+  let lastErr=null;
+  const attempts=Number(options.attempts||2);
+  for(let attempt=1;attempt<=attempts;attempt++){
+    try{
+      const res=await jsonpScript(action,params,timeout,{...options,background:true});
+      readFailureStreak=0;
+      hardConnectionDown=false;
+      lastReadSuccessAt=Date.now();
+      clearConnectionError();
+      return res;
+    }catch(e){
+      lastErr=e;
+      if(!navigator.onLine)break;
+      if(attempt<attempts)await waitMs_(700*attempt);
+    }
+  }
+  throw lastErr||new Error('일정 서버 읽기에 실패했습니다.');
+}
+
 async function jsonp(action,params={},timeout=15000,options={}){
+  const readOnly=action==='bootstrap'||action==='revision';
+  if(readOnly)return readApi(action,params,Math.min(timeout,action==='revision'?6000:12000),options);
+
   try{
     return await jsonpScript(action,params,timeout,options);
   }catch(firstErr){
@@ -386,6 +415,30 @@ function startSyncProgress(cached=!!STATE){
   },500);
 }
 
+function reconnectDelayMs_(){
+  const steps=[15000,30000,60000,120000];
+  return steps[Math.min(Math.max(readFailureStreak-1,0),steps.length-1)];
+}
+function scheduleReconnect_(reason=''){
+  clearTimeout(reconnectTimer);
+  const delay=reconnectDelayMs_();
+  logEvent('INFO','RECONNECT_SCHEDULE',`delay=${delay}ms reason=${reason}`);
+  reconnectTimer=setTimeout(()=>{
+    reconnectTimer=null;
+    pollRevision(true);
+  },delay);
+}
+function markReadFailure_(e){
+  readFailureStreak=Math.min(readFailureStreak+1,10);
+  hardConnectionDown=true;
+  const msg=e&&e.message?e.message:String(e||'');
+  logEvent('WARN','READ_DEGRADED',`streak=${readFailureStreak} msg=${msg}`);
+  if(STATE){
+    setProcess('캐시 사용 · 자동 재연결 중','working',msg);
+    scheduleReconnect_(msg);
+  }
+}
+
 async function bootstrap(showLoading=true,silentFailure=false){
   if(STATE&&(pending.length||flushing)){
     needsFullRefresh=true;
@@ -412,6 +465,11 @@ async function bootstrap(showLoading=true,silentFailure=false){
 
     if(!silentFailure)setSyncProgress(92,'서버 응답 수신',hadState);
     STATE=res.data;
+    readFailureStreak=0;
+    hardConnectionDown=false;
+    lastReadSuccessAt=Date.now();
+    clearTimeout(reconnectTimer);
+    reconnectTimer=null;
     migrateLegacyEventQueue_();
     pending.forEach(applyOptimistic);
     if(!silentFailure)setSyncProgress(96,'로컬 캐시 갱신',hadState);
@@ -434,18 +492,15 @@ async function bootstrap(showLoading=true,silentFailure=false){
     logEvent('INFO',silentFailure?'BOOTSTRAP_BG_OK':'BOOTSTRAP_OK',`ms=${Math.round(performance.now()-started)} revision=${STATE.revision}`);
     return true;
   }catch(e){
-    if(silentFailure&&STATE){
-      logEvent('WARN','BOOTSTRAP_BG_FAIL',e&&e.message?e.message:String(e));
+    if(STATE){
+      logEvent(silentFailure?'WARN':'ERROR',silentFailure?'BOOTSTRAP_BG_FAIL':'BOOTSTRAP_FAIL',e&&e.message?e.message:String(e));
+      renderAll();
+      if(navigator.onLine)markReadFailure_(e);
+      else setProcess('오프라인 · 캐시 사용','offline');
       return false;
     }
     logEvent('ERROR','BOOTSTRAP_FAIL',e&&e.message?e.message:String(e));
-    if(STATE){
-      renderAll();
-      setProcess(navigator.onLine?'동기화 실패 · 캐시 사용':'오프라인 · 캐시 사용',navigator.onLine?'error':'offline');
-      showToast('기존 데이터로 표시 중');
-    }else{
-      showApiError(e&&e.message?e.message:String(e));
-    }
+    showApiError(e&&e.message?e.message:String(e));
     return false;
   }finally{
     if(!silentFailure&&readInFlight&&processStatus.includes('동기화'))stopSyncProgress();
@@ -1954,38 +2009,44 @@ document.querySelectorAll('.navBtn').forEach(b=>b.onclick=()=>{
   window.scrollTo({top:0,behavior:'smooth'});
 });
 
-async function pollRevision(){
-  if(!STATE||flushing||readInFlight)return;
-  // 정상 연결 상태에서 저장 대기 중이면 mutate가 우선입니다.
-  // 단, hardConnectionDown 상태에서는 pending이 있어도 revision 헬스체크를 허용합니다.
+async function pollRevision(force=false){
+  if(!STATE||flushing||readInFlight||dateSaveBusy||monthSaveBusy)return;
   if(pending.length&&!hardConnectionDown)return;
-  if(needsFullRefresh&&!pending.length&&!hardConnectionDown){
-    logEvent('INFO','POST_SAVE_REFRESH_RETRY','pending full refresh');
-    await bootstrap(false,true);
-    return;
-  }
+
+  const now=Date.now();
+  if(!force&&hardConnectionDown&&reconnectTimer)return;
+  if(!force&&now-lastRevisionCheckAt<20000)return;
+  lastRevisionCheckAt=now;
 
   readInFlight=true;
   let refreshNeeded=false;
   let recovered=false;
+
   try{
-    const r=await jsonp('revision',{},6000,{background:true});
+    const r=await readApi('revision',{},6000,{background:true,attempts:2});
     if(r&&r.ok){
-      if(hardConnectionDown){
-        hardConnectionDown=false;
-        recovered=true;
-        clearConnectionError();
+      recovered=hardConnectionDown||readFailureStreak>0;
+      hardConnectionDown=false;
+      readFailureStreak=0;
+      lastReadSuccessAt=Date.now();
+      clearTimeout(reconnectTimer);
+      reconnectTimer=null;
+      clearConnectionError();
+
+      if(recovered){
         logEvent('INFO','API_RECOVERED',`revision=${r.revision} pending=${pending.length}`);
       }
+
       if(Number(r.revision)!==Number(STATE.revision)){
         logEvent('INFO','REMOTE_CHANGE',`local=${STATE.revision} remote=${r.revision}`);
-        needsFullRefresh=true;
         refreshNeeded=true;
+      }else if(!pending.length&&!flushing){
+        setProcess('연결 완료','ok');
       }
     }
   }catch(e){
-    if(isHardConnectionError(e))hardConnectionDown=true;
     logEvent('WARN','REVISION_FAIL',e&&e.message?e.message:String(e));
+    markReadFailure_(e);
   }finally{
     readInFlight=false;
   }
@@ -1993,10 +2054,14 @@ async function pollRevision(){
   if(recovered&&pending.length&&!flushing){
     setProcess('서버 연결 복구 · 저장 재개','working');
     clearTimeout(retryTimer);
-    retryTimer=setTimeout(flushQueue,80);
+    retryTimer=setTimeout(flushQueue,100);
     return;
   }
-  if(refreshNeeded&&!pending.length&&!flushing)await bootstrap(false,true);
+
+  if(refreshNeeded&&!pending.length&&!flushing){
+    const ok=await bootstrap(false,true);
+    if(!ok&&STATE)markReadFailure_(new Error('최신 데이터 갱신 실패'));
+  }
 }
 
 logEvent('INFO','APP_START',`version=${APP_VERSION}`);
@@ -2011,13 +2076,14 @@ if(hadCachedState){
   pending.forEach(applyOptimistic);
   renderAll();
   logEvent('INFO','CACHE_RENDERED',`revision=${STATE.revision}`);
+
   if(pending.length){
     hardConnectionDown=true;
     setProcess('저장 보류 · 서버 확인 중','working');
-    startupSyncTimer=setTimeout(pollRevision,500);
+    startupSyncTimer=setTimeout(()=>pollRevision(true),1200);
   }else{
-    setProcess('캐시 데이터 표시 · 동기화 8% · 서버 최신 데이터 확인','working');
-    startupSyncTimer=setTimeout(()=>bootstrap(false,false),180);
+    setProcess('캐시 표시 · 최신 여부 확인 중','working');
+    startupSyncTimer=setTimeout(()=>pollRevision(true),1200);
   }
 }else{
   viewMonth=new Date(localNow.getFullYear(),localNow.getMonth(),1);
@@ -2027,11 +2093,30 @@ if(hadCachedState){
 
 renderPlaylist();
 renderScore();
-setTimeout(()=>loadScoreMeta(true),1400);
 
-pollTimer=setInterval(pollRevision,30000);
-window.addEventListener('online',()=>{logEvent('INFO','NETWORK','online');if(STATE){if(pending.length)hardConnectionDown=true;pollRevision()}else bootstrap(false)});
-window.addEventListener('offline',()=>{logEvent('INFO','NETWORK','offline');setProcess('오프라인','offline')});
+// 악보 메타는 앱 시작과 동시에 호출하지 않습니다.
+// 찬양 탭에 들어갈 때만 필요 시 불러와 Apps Script 동시 요청을 줄입니다.
+pollTimer=setInterval(()=>pollRevision(false),60000);
+
+window.addEventListener('online',()=>{
+  logEvent('INFO','NETWORK','online');
+  clearTimeout(reconnectTimer);
+  reconnectTimer=null;
+  if(STATE)pollRevision(true);
+  else bootstrap(false);
+});
+
+window.addEventListener('offline',()=>{
+  logEvent('INFO','NETWORK','offline');
+  clearTimeout(reconnectTimer);
+  reconnectTimer=null;
+  setProcess(STATE?'오프라인 · 캐시 사용':'오프라인','offline');
+});
+
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState!=='visible'||!STATE)return;
+  if(Date.now()-lastReadSuccessAt>60000)setTimeout(()=>pollRevision(true),500);
+});
 </script>
 </body>
 </html>
