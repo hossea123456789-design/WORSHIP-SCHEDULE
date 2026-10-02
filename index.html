@@ -1467,7 +1467,7 @@ function renderScore(){
   if(!area||!btn)return;
 
   const metaPending=scoreMetaLoading||scoreMetaState==='idle'||scoreMetaState==='cached'||scoreMetaState==='cached-empty';
-  btn.disabled=scoreBusy||scoreMetaLoading||scoreMetaState==='idle';
+  btn.disabled=scoreBusy||scoreMetaState!=='loaded';
   btn.textContent=scoreBusy?'업로드 중…':(SCORE_META?'+ 새 악보로 교체':'+ 악보 올리기');
 
   if(!SCORE_META){
