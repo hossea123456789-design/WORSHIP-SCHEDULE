@@ -88,7 +88,7 @@ main{padding:15px 15px 36px}.panel{display:none}.panel.active{display:block}.sec
 
 const PLAYLIST_ID='PLDThR_8ShZAFTVEZgp2jtZaha8bThHZXB';
 const STORAGE_PREFIX='worship_fast_v3_';
-const APP_VERSION='v3.17.1';
+const APP_VERSION='v3.17.2';
 const BOOTSTRAP_TIMEOUT_MS=25000;
 const MUTATE_TIMEOUT_MS=25000;
 
@@ -296,11 +296,20 @@ function jsonpScript(action,params={},timeout=15000,options={}){
       if(done)return;done=true;clearTimeout(timer);
       try{delete window[cb]}catch(e){}
       script.remove();
-      if(err){logEvent(options.background?'WARN':'ERROR',options.background?'API_FAIL_BG':'API_FAIL',`action=${action} ms=${Math.round(performance.now()-started)} msg=${err.message||err}`);reject(err)}else{logEvent('INFO','API_OK',`action=${action} ms=${Math.round(performance.now()-started)}`);resolve(data)}
+      if(err){
+        if(!options.quietFailure)logEvent(options.background?'WARN':'ERROR',options.background?'API_FAIL_BG':'API_FAIL',`action=${action} ms=${Math.round(performance.now()-started)} msg=${err.message||err}`);
+        reject(err);
+      }else{
+        if(!options.quietSuccess)logEvent('INFO','API_OK',`action=${action} ms=${Math.round(performance.now()-started)}`);
+        resolve(data);
+      }
     }
 
     window[cb]=data=>finish(null,data);
-    script.onerror=()=>{logEvent(options.background?'WARN':'ERROR','API_SCRIPT_ERROR',`action=${action} online=${navigator.onLine} host=${new URL(API_URL).host}`);finish(new Error('Apps Script API에 연결하지 못했습니다.'))};
+    script.onerror=()=>{
+      if(!options.quietFailure)logEvent(options.background?'WARN':'ERROR','API_SCRIPT_ERROR',`action=${action} online=${navigator.onLine} host=${new URL(API_URL).host}`);
+      finish(new Error('Apps Script API에 연결하지 못했습니다.'));
+    };
     script.src=API_URL+'?'+q.toString();
     document.head.appendChild(script);
   });
@@ -371,28 +380,74 @@ function worshipIframePost(action,params={},timeout=15000,options={}){
 function waitMs_(ms){return new Promise(resolve=>setTimeout(resolve,ms))}
 
 async function readApi(action,params={},timeout=7000,options={}){
-  let lastErr=null;
-  const attempts=Number(options.attempts||2);
-  for(let attempt=1;attempt<=attempts;attempt++){
-    try{
-      const res=await jsonpScript(action,params,timeout,{...options,background:true});
+  const attempts=Math.max(1,Math.min(2,Number(options.attempts||2)));
+  const hedgeDelay=Math.max(800,Number(options.hedgeDelay||(action==='revision'?2000:2800)));
+  const started=performance.now();
+
+  return new Promise((resolve,reject)=>{
+    let settled=false;
+    let launched=0;
+    let failed=0;
+    let hedgeTimer=null;
+    const errors=[];
+
+    const finishSuccess=(data,attempt)=>{
+      if(settled)return;
+      settled=true;
+      clearTimeout(hedgeTimer);
       readFailureStreak=0;
       hardConnectionDown=false;
       lastReadSuccessAt=Date.now();
       clearConnectionError();
-      return res;
-    }catch(e){
-      lastErr=e;
-      if(!navigator.onLine)break;
-      if(attempt<attempts)await waitMs_(700*attempt);
+      logEvent('INFO','API_READ_OK',`action=${action} attempt=${attempt} ms=${Math.round(performance.now()-started)}`);
+      resolve(data);
+    };
+
+    const finishFailure=(err)=>{
+      errors.push(err);
+      failed++;
+      if(settled)return;
+
+      if(launched<attempts){
+        clearTimeout(hedgeTimer);
+        launch();
+        return;
+      }
+
+      if(failed>=attempts){
+        settled=true;
+        clearTimeout(hedgeTimer);
+        const lastErr=errors[errors.length-1]||new Error('일정 서버 읽기에 실패했습니다.');
+        logEvent('WARN','API_READ_FAIL',`action=${action} attempts=${attempts} ms=${Math.round(performance.now()-started)} msg=${lastErr&&lastErr.message?lastErr.message:lastErr}`);
+        reject(lastErr);
+      }
+    };
+
+    const launch=()=>{
+      if(settled||launched>=attempts)return;
+      launched++;
+      const attempt=launched;
+      logEvent('INFO',attempt===1?'API_START':'API_HEDGE_START',`action=${action} attempt=${attempt}`);
+      jsonpScript(
+        action,
+        params,
+        timeout,
+        {...options,background:true,quietFailure:true,quietSuccess:true}
+      ).then(data=>finishSuccess(data,attempt)).catch(finishFailure);
+    };
+
+    launch();
+    if(attempts>1){
+      hedgeTimer=setTimeout(()=>{
+        if(!settled&&launched<attempts)launch();
+      },hedgeDelay);
     }
-  }
-  throw lastErr||new Error('일정 서버 읽기에 실패했습니다.');
+  });
 }
 
 async function jsonp(action,params={},timeout=15000,options={}){
   const readOnly=action==='bootstrap'||action==='revision';
-  if(readOnly)return readApi(action,params,Math.min(timeout,action==='revision'?6000:12000),options);
+  if(readOnly)return readApi(action,params,Math.min(timeout,action==='revision'?5500:8000),options);
 
   try{
     return await jsonpScript(action,params,timeout,options);
@@ -498,21 +553,30 @@ function startSyncProgress(cached=!!STATE,startPct=null){
     const sec=(performance.now()-started)/1000;
     let pct,label,detail;
     if(sec<1){pct=Math.max(initial,20);label='요청 전송 완료';detail='Apps Script에 최신 상태를 요청했습니다.'}
-    else if(sec<3){pct=Math.max(initial,34+sec*5);label='서버 응답 대기';detail='네트워크와 Apps Script 응답을 기다리고 있습니다.'}
-    else if(sec<7){pct=Math.max(initial,55+(sec-3)*4);label='일정 데이터 확인';detail='변경된 데이터가 있는지 확인하고 있습니다.'}
+    else if(sec<2){pct=Math.max(initial,34+sec*6);label='서버 응답 대기';detail='첫 번째 빠른 확인 요청의 응답을 기다리고 있습니다.'}
+    else if(sec<5){pct=Math.max(initial,50+(sec-2)*7);label='백업 요청 병행';detail='첫 요청이 늦어 두 번째 요청도 동시에 보내 먼저 도착하는 응답을 사용합니다.'}
+    else if(sec<8){pct=Math.max(initial,71+(sec-5)*4);label='일정 데이터 확인';detail='두 요청 중 정상 응답을 기다리고 있습니다.'}
     else{pct=Math.max(initial,Math.min(84,72+(sec-7)*1.5));label='서버 처리 완료 대기';detail='응답이 늦어지고 있지만 현재 화면은 캐시로 계속 사용할 수 있습니다.'}
     setSyncProgress(pct,label,cached,detail);
   },500);
 }
 
 function reconnectDelayMs_(){
-  const steps=[15000,30000,60000,120000];
+  const steps=[5000,10000,20000,30000];
   return steps[Math.min(Math.max(readFailureStreak-1,0),steps.length-1)];
 }
 function scheduleReconnect_(reason=''){
   clearTimeout(reconnectTimer);
   const delay=reconnectDelayMs_();
   logEvent('INFO','RECONNECT_SCHEDULE',`delay=${delay}ms reason=${reason}`);
+  if(STATE){
+    setProcess(
+      `캐시 사용 · ${Math.round(delay/1000)}초 후 재연결`,
+      'working',
+      '현재 화면은 캐시로 사용할 수 있습니다. 저장은 최신 서버 확인 후 활성화됩니다.',
+      32
+    );
+  }
   reconnectTimer=setTimeout(()=>{
     reconnectTimer=null;
     pollRevision(true);
@@ -2220,9 +2284,14 @@ async function pollRevision(force=false){
   }
 
   try{
-    const r=await readApi('revision',{},6000,{background:true,attempts:2});
+    const wasDegraded=hardConnectionDown||readFailureStreak>0;
+    const r=await readApi('revision',{},5500,{
+      background:true,
+      attempts:2,
+      hedgeDelay:force?1800:2400
+    });
     if(r&&r.ok){
-      recovered=hardConnectionDown||readFailureStreak>0;
+      recovered=wasDegraded;
       hardConnectionDown=false;
       readFailureStreak=0;
       lastReadSuccessAt=Date.now();
@@ -2300,10 +2369,10 @@ if(hadCachedState){
   if(pending.length){
     hardConnectionDown=true;
     setProcess('저장 보류 · 서버 확인 중','working','저장 대기 내용을 유지한 채 서버 연결을 확인하고 있습니다.',18);
-    startupSyncTimer=setTimeout(()=>pollRevision(true),1200);
+    startupSyncTimer=setTimeout(()=>pollRevision(true),180);
   }else{
     setProcess('캐시 표시 · 최신 여부 확인 중','working','화면은 즉시 사용할 수 있고 서버 최신 상태를 확인하고 있습니다.',12);
-    startupSyncTimer=setTimeout(()=>pollRevision(true),1200);
+    startupSyncTimer=setTimeout(()=>pollRevision(true),180);
   }
 }else{
   serverFresh=false;
