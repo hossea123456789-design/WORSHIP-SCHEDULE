@@ -1,5 +1,5 @@
 /**
- * WORSHIP_SCORE_API v3.12.6
+ * WORSHIP_SCORE_API v3.12.7
  * 찬양팀 악보 전용 standalone Apps Script backend
  *
  * 현재 프런트(v3.12.6) 계약:
