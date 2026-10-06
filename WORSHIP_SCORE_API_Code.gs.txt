@@ -16,7 +16,7 @@
  * - https://www.googleapis.com/auth/script.external_request
  */
 
-const SCORE_API_VERSION = 'v3.12.6';
+const SCORE_API_VERSION = 'v3.12.7';
 
 const SCORE_REQUIRED_SCOPES = Object.freeze([
   'https://www.googleapis.com/auth/drive',
@@ -26,6 +26,7 @@ const SCORE_REQUIRED_SCOPES = Object.freeze([
 const SCORE_STORE = Object.freeze({
   APP: 'worship-score',
   FOLDER_PROP: 'WORSHIP_SCORE_FOLDER_ID',
+  CANONICAL_FOLDER_ID: '1qb-KEOyDzXbwD0-18gUFP_rfy7zNcW-D',
   FILE_PROP: 'WORSHIP_SCORE_FILE_ID',
   NAME_PROP: 'WORSHIP_SCORE_FILE_NAME',
   MIME_PROP: 'WORSHIP_SCORE_FILE_MIME',
@@ -41,6 +42,16 @@ const SCORE_STORE = Object.freeze({
 function resetScoreAuthorization() {
   ScriptApp.invalidateAuth();
   return '기존 Apps Script 권한을 초기화했습니다. 편집기를 새로고침한 뒤 setupScoreStandalone을 실행해주세요. 누락된 권한은 setupScoreStandalone이 자동으로 요청합니다.';
+}
+
+function repairScoreFolderReference() {
+  const folder = getScoreFolder_(true);
+  return [
+    '악보 폴더 참조 복구 완료',
+    '폴더명: ' + folder.getName(),
+    '폴더 ID: ' + folder.getId(),
+    '새 폴더 생성 여부: 기존 폴더 재사용'
+  ].join('\n');
 }
 
 function setupScoreStandalone() {
@@ -648,20 +659,91 @@ function buildScoreMeta_(file, updatedAt) {
   };
 }
 
+function scoreFolderByIdIfUsable_(id) {
+  const value = String(id || '').trim();
+  if (!value) return null;
+  try {
+    const folder = DriveApp.getFolderById(value);
+    if (!folder.isTrashed()) return folder;
+  } catch (_) {}
+  return null;
+}
+
+function folderContainsFileId_(folder, fileId) {
+  const target = String(fileId || '').trim();
+  if (!folder || !target) return false;
+  try {
+    const files = folder.getFiles();
+    while (files.hasNext()) {
+      if (String(files.next().getId()) === target) return true;
+    }
+  } catch (_) {}
+  return false;
+}
+
+function findExistingScoreFolder_() {
+  const props = PropertiesService.getScriptProperties();
+  const currentFileId = String(props.getProperty(SCORE_STORE.FILE_PROP) || '');
+  const root = DriveApp.getRootFolder();
+  const it = root.getFoldersByName(SCORE_STORE.FOLDER_NAME);
+  let newest = null;
+  let newestTime = -1;
+
+  while (it.hasNext()) {
+    const folder = it.next();
+    try {
+      if (folder.isTrashed()) continue;
+
+      // 현재 악보 파일이 들어 있는 폴더가 있으면 그것이 최우선입니다.
+      if (currentFileId && folderContainsFileId_(folder, currentFileId)) {
+        return folder;
+      }
+
+      const updated = folder.getLastUpdated();
+      const time = updated ? updated.getTime() : 0;
+      if (!newest || time > newestTime) {
+        newest = folder;
+        newestTime = time;
+      }
+    } catch (_) {}
+  }
+
+  return newest;
+}
+
 function getScoreFolder_(createIfMissing) {
   const props = PropertiesService.getScriptProperties();
-  const savedId = String(props.getProperty(SCORE_STORE.FOLDER_PROP) || '');
 
-  if (savedId) {
-    try {
-      const folder = DriveApp.getFolderById(savedId);
-      if (!folder.isTrashed()) return folder;
-    } catch (_) {}
-    props.deleteProperty(SCORE_STORE.FOLDER_PROP);
+  // 1) Script Properties에 저장된 ID.
+  const savedId = String(props.getProperty(SCORE_STORE.FOLDER_PROP) || '');
+  const saved = scoreFolderByIdIfUsable_(savedId);
+  if (saved) {
+    // 예전 잘못된 폴더 ID가 남아 있어도 canonical 폴더가 살아 있으면 canonical로 복구합니다.
+    const canonical = scoreFolderByIdIfUsable_(SCORE_STORE.CANONICAL_FOLDER_ID);
+    if (canonical && canonical.getId() !== saved.getId()) {
+      props.setProperty(SCORE_STORE.FOLDER_PROP, canonical.getId());
+      return canonical;
+    }
+    return saved;
+  }
+
+  // 2) 현재 운영 중인 canonical 폴더. Script Properties가 사라져도 이 폴더를 재사용합니다.
+  const canonical = scoreFolderByIdIfUsable_(SCORE_STORE.CANONICAL_FOLDER_ID);
+  if (canonical) {
+    props.setProperty(SCORE_STORE.FOLDER_PROP, canonical.getId());
+    return canonical;
+  }
+
+  // 3) canonical 폴더가 삭제된 예외 상황이면 기존 동명 폴더를 먼저 복구합니다.
+  const existing = findExistingScoreFolder_();
+  if (existing) {
+    props.setProperty(SCORE_STORE.FOLDER_PROP, existing.getId());
+    return existing;
   }
 
   if (!createIfMissing) return null;
 
+  // 4) 저장된 ID, canonical, 동명 기존 폴더가 모두 없을 때에만 새 폴더를 만듭니다.
   const folder = DriveApp.createFolder(SCORE_STORE.FOLDER_NAME);
   props.setProperty(SCORE_STORE.FOLDER_PROP, folder.getId());
   return folder;
