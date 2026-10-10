@@ -1,4 +1,5 @@
 name: Probe Live Apps Script APIs
+# probe-trigger: 2026-10-10T12:22Z
 on:
   push:
     branches: [main]
