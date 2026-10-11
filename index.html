@@ -159,7 +159,7 @@ const DEFAULT_HONORIFICS=['집사님','목사님','사모님','권사님','장�
 const APP_PUBLIC_URL='https://hossea123456789-design.github.io/WORSHIP-SCHEDULE/';
 const KAKAO_JAVASCRIPT_KEY='c14b7dd534f10ac1fc266ba52c9e7a56';
 const STORAGE_PREFIX='worship_fast_v3_';
-const APP_VERSION='v3.20.9';
+const APP_VERSION='v3.21.0';
 const BOOTSTRAP_TIMEOUT_MS=25000;
 const MUTATE_TIMEOUT_MS=25000;
 
@@ -365,11 +365,24 @@ function keyOf(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDa
 function monthKey(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)}
 function normalizeDateKey(v){
   if(v==null||v==='')return'';
-  if(v instanceof Date&&!isNaN(v))return keyOf(v);
+  // Google Apps Script가 시트 Date를 JSON 직렬화하면 UTC 날짜가 전날로
+  // 바뀌어 전송될 수 있습니다. 예: 10/25 00:00 KST -> 10/24 15:00Z.
+  // 이 UTC ISO 시간을 문자열 앞의 '10/24'로 잘라 사용하면 안 됩니다.
+  if(v instanceof Date&&!isNaN(v)){
+    const kst=new Date(v.getTime()+9*3600000);
+    return kst.getUTCFullYear()+'-'+pad(kst.getUTCMonth()+1)+'-'+pad(kst.getUTCDate());
+  }
   const s=String(v).trim();
+  if(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/i.test(s)){
+    const timestamp=Date.parse(s);
+    if(Number.isFinite(timestamp)){
+      const kst=new Date(timestamp+9*3600000);
+      return kst.getUTCFullYear()+'-'+pad(kst.getUTCMonth()+1)+'-'+pad(kst.getUTCDate());
+    }
+  }
   const m=s.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/);
-  if(m)return `${m[1]}-${pad(m[2])}-${pad(m[3])}`;
-  return /^\d{4}-\d{2}-\d{2}$/.test(s)?s:'';
+  if(m)return m[1]+'-'+pad(m[2])+'-'+pad(m[3]);
+  return'';
 }
 function normalizeMonthKey(v){
   if(v==null||v==='')return'';
