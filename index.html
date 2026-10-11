@@ -152,7 +152,7 @@ const DEFAULT_HONORIFICS=['집사님','목사님','사모님','권사님','장�
 const APP_PUBLIC_URL='https://hossea123456789-design.github.io/WORSHIP-SCHEDULE/';
 const KAKAO_JAVASCRIPT_KEY='c14b7dd534f10ac1fc266ba52c9e7a56';
 const STORAGE_PREFIX='worship_fast_v3_';
-const APP_VERSION='v3.20.7';
+const APP_VERSION='v3.20.8';
 const BOOTSTRAP_TIMEOUT_MS=25000;
 const MUTATE_TIMEOUT_MS=25000;
 
@@ -1529,6 +1529,9 @@ async function bootstrap(showLoading=true,silentFailure=false){
     pending.forEach(applyOptimistic);
     if(!silentFailure)setSyncProgress(96,'최신 데이터 적용 중',hadState,'최신 데이터를 기기에 저장하고 화면 반영을 준비하고 있습니다.');
     cacheState();
+    // 캐시의 revision은 저장 직후 로컬에서도 갱신되므로 서버에서 실제
+    // 전체 데이터 검증을 완료한 앱 버전을 별도 기록합니다.
+    safeSet('lastFullBootstrapVersion',APP_VERSION);
     needsFullRefresh=false;
 
     const today=new Date(currentTodayKey()+'T00:00:00');
@@ -1757,7 +1760,13 @@ async function flushQueue(){
     )){
       needsFullRefresh=true;
       logEvent('INFO','POST_SAVE_REFRESH',`type=${first.type}`);
-      setTimeout(()=>bootstrap(false,true),250);
+      setTimeout(async()=>{
+        const ok=await bootstrap(false,true);
+        // 다른 읽기 요청과 겹쳐 복구를 미뤘다면 다음 연결 확인에서 반드시 처리
+        if(!ok&&needsFullRefresh&&!readInFlight&&!flushing&&!pending.length&&!hardConnectionDown){
+          setTimeout(()=>pollRevision(true),900);
+        }
+      },250);
     }
   }catch(e){
     flushing=false;
@@ -4454,7 +4463,10 @@ if(hadCachedState){
   }else{
     startSyncProgress(true,8);
     startupSyncTimer=setTimeout(()=>{
-      if(Number(STATE&&STATE.schemaVersion||0)<2)bootstrap(false,false);
+      // 새 버전 첫 방문 시 과거 캐시에 같은 revision의 오래된 날짜 목록이
+      // 남아 있어도 최신 서버 전체 데이터를 한 번 강제로 가져옵니다.
+      if(Number(STATE&&STATE.schemaVersion||0)<2||
+         safeGet('lastFullBootstrapVersion')!==APP_VERSION)bootstrap(false,false);
       else pollRevision(true);
     },180);
   }
