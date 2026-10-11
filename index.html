@@ -30,6 +30,8 @@ main{padding:15px 15px 36px}.panel{display:none}.panel.active{display:block}.sec
 .primaryBtn,.ghostBtn,.dangerBtn,.iconBtn{border:0;border-radius:10px;font-weight:900}.primaryBtn{background:#171a2b;color:#fff;padding:9px 11px;font-size:10px}.ghostBtn,.iconBtn{background:#f1f3f7;color:#5f6674;padding:9px 10px;font-size:10px}.dangerBtn{background:var(--dangerBg);color:var(--danger);padding:9px 10px;font-size:10px}
 .prayerHero{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px;margin-bottom:12px;border-radius:19px;background:linear-gradient(135deg,#171a2b,#3d3b8d);color:#fff}.prayerHero .small{font-size:9px;opacity:.72}.prayerHero .big{font-size:20px;font-weight:950;margin-top:3px}.prayerHero .dateLine{color:#d9dcff}.nextPrayer{min-width:96px;text-align:center;background:#fff;color:#171a2b;border-radius:12px;padding:8px}.nextPrayer small{display:block;font-size:8px;color:#8b91a0}.settingCard{margin-bottom:12px}.cardHead{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:12px 13px;border-bottom:1px solid var(--line)}.cardHead h3{margin:0;font-size:13px}.cardBody{padding:11px 13px}.info{padding:11px 12px;border-radius:13px;background:#f8f9fc;color:#626a7c;font-size:10px;line-height:1.55}
 .prayerRow,.memberRow{display:flex;align-items:center;gap:9px;padding:9px 0;border-bottom:1px solid var(--line)}.prayerRow:last-child,.memberRow:last-child{border-bottom:0}.prayerNum{width:29px;height:27px;border-radius:8px;background:#f1f3f7;display:grid;place-items:center;font-size:8px;font-weight:950;color:#838b9b}.prayerRow.current .prayerNum{background:var(--accent);color:#fff}.prayerName,.memberName{font-size:11px;font-weight:950}.prayerName{flex:1}.prayerDate{font-size:9px;color:var(--muted)}
+.prayerEditHint{display:flex;align-items:center;gap:7px;margin:0 0 9px;padding:9px 10px;border-radius:11px;background:#f7f8fc;color:#697184;font-size:9px;font-weight:850;line-height:1.4}.prayerEditHint .gripMini{font-size:15px;line-height:1;color:#7a67ef}
+#prayerEditRows{display:flex;flex-direction:column;gap:6px}.prayerEditRow{display:flex;align-items:center;gap:9px;min-height:48px;padding:7px 8px;border:1px solid var(--line);border-radius:12px;background:#fff;transition:transform .14s ease,box-shadow .14s ease,border-color .14s ease,background .14s ease}.prayerEditRow .memberName{flex:1;min-width:0}.prayerEditIndex{width:27px;height:27px;display:grid;place-items:center;border-radius:8px;background:#f3f4f8;color:#858c9b;font-size:9px;font-weight:950;flex:0 0 auto}.prayerDragHandle{display:grid;place-items:center;width:38px;height:36px;flex:0 0 auto;border:0;border-radius:10px;background:#f3f1ff;color:#6e5bea;font-size:20px;font-weight:950;line-height:1;touch-action:none;user-select:none;-webkit-user-select:none;cursor:grab}.prayerDragHandle:active{cursor:grabbing}.prayerEditRow.dragging{position:relative;z-index:5;border-color:#9d91ff;background:#faf9ff;box-shadow:0 9px 24px rgba(92,80,220,.20),0 0 0 2px rgba(124,92,255,.08);transform:scale(1.018)}.prayerEditRow.dragging .prayerDragHandle{background:#7160ef;color:#fff;box-shadow:0 0 12px rgba(113,96,239,.32)}.prayerEditRow.drag-over-before{transform:translateY(3px)}.prayerEditRow.drag-over-after{transform:translateY(-3px)}
 .tags,.roleChips,.checkWrap{display:flex;gap:5px;flex-wrap:wrap}.tag,.roleChip{border-radius:999px;font-size:8px;font-weight:900}.tag{padding:3px 6px;background:#f1f3f7;color:#606879}.tag.leader{background:var(--leaderBg);color:var(--leader)}.tag.piano{background:var(--pianoBg);color:var(--piano)}.tag.bass{background:var(--bassBg);color:var(--bass)}.tag.drum{background:var(--drumBg);color:var(--drum)}.tag.singer{background:var(--singerBg);color:var(--singer)}.roleChip{border:1px solid var(--line);background:#fff;padding:7px 8px;color:#515867}
 .dateTabs{display:flex;gap:5px;margin-bottom:9px}.dateTab{flex:1;border:1px solid var(--line);background:#fff;border-radius:9px;padding:7px;font-size:9px;font-weight:900;color:#687083}.dateTab.active{background:#171a2b;color:#fff;border-color:#171a2b}.weekdayGrid,.dateGrid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}.weekdayGrid div{text-align:center;font-size:8px;color:#989fac;font-weight:900}.weekdayGrid .sun{color:#d92d20}.dateCell{position:relative;border:1px solid var(--line);background:#fff;border-radius:8px;min-height:39px;padding:4px 2px;font-size:9px;font-weight:900;color:#596174}.dateCell.sun{color:#d92d20}.dateCell.selected{background:#171a2b;color:#fff;border-color:#171a2b}.dateCell.blank{visibility:hidden}.dateCell.holiday:after{content:"";position:absolute;right:4px;top:4px;width:4px;height:4px;background:#ef4444;border-radius:50%}.dateCell small{display:block;font-size:6px;opacity:.75;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .playlistCard{padding:13px}.youtubeBox{position:relative;width:100%;aspect-ratio:16/9;border-radius:15px;overflow:hidden;background:#111;margin:10px 0}.youtubeBox iframe{position:absolute;inset:0;width:100%;height:100%;border:0}.ytLink{display:inline-flex;text-decoration:none;background:#ff0000;color:#fff;border-radius:10px;padding:9px 11px;font-size:10px;font-weight:950}
@@ -88,7 +90,7 @@ main{padding:15px 15px 36px}.panel{display:none}.panel.active{display:block}.sec
 
 const PLAYLIST_ID='PLDThR_8ShZAFTVEZgp2jtZaha8bThHZXB';
 const STORAGE_PREFIX='worship_fast_v3_';
-const APP_VERSION='v3.17.5';
+const APP_VERSION='v3.17.6';
 const BOOTSTRAP_TIMEOUT_MS=25000;
 const MUTATE_TIMEOUT_MS=25000;
 
@@ -2139,6 +2141,7 @@ function openModal(title,body){
   modal.scrollTop=0;
 }
 function closeModal(){
+  if(typeof cancelPrayerDrag_==='function')cancelPrayerDrag_();
   document.getElementById('backdrop').classList.remove('show');
   document.getElementById('modal').classList.remove('show');
 }
@@ -2263,12 +2266,14 @@ function deleteRole(id){
   closeModal();
 }
 
+let prayerDragState_=null;
+
 function openPrayerOrder(){
   window._prayerIds=STATE.prayerOrder.map(x=>String(x.member_id));
 
   openModal(
     '기도 순서 편집',
-    `<div id="prayerEditRows"></div><div class="modalActions"><button class="primaryBtn" onclick="savePrayerOrder()">저장</button></div>`
+    `<div class="prayerEditHint"><span class="gripMini">≡</span><span>오른쪽 손잡이를 눌러 원하는 위치로 바로 끌어 놓으세요.</span></div><div id="prayerEditRows"></div><div class="modalActions"><button class="primaryBtn" onclick="savePrayerOrder()">순서 저장</button></div>`
   );
 
   renderPrayerEditor();
@@ -2276,17 +2281,122 @@ function openPrayerOrder(){
 
 function renderPrayerEditor(){
   const ids=window._prayerIds||[];
-  document.getElementById('prayerEditRows').innerHTML=ids.map((id,i)=>{
+  const box=document.getElementById('prayerEditRows');
+  if(!box)return;
+  box.innerHTML=ids.map((id,i)=>{
     const m=getMember(id);
-    return `<div class="memberRow">
-      <div style="flex:1"><div class="memberName">${i+1}. ${escapeHtml(m?m.member_name:'')}</div></div>
-      <button class="iconBtn" onclick="movePrayer(${i},-1)">↑</button>
-      <button class="iconBtn" onclick="movePrayer(${i},1)">↓</button>
+    return `<div class="prayerEditRow" data-member-id="${escapeHtml(id)}">
+      <div class="prayerEditIndex">${i+1}</div>
+      <div class="memberName">${escapeHtml(m?m.member_name:'')}</div>
+      <button class="prayerDragHandle" type="button" aria-label="${escapeHtml(m?m.member_name:'멤버')} 순서 이동" title="끌어서 순서 변경">≡</button>
     </div>`;
   }).join('');
+  bindPrayerDrag_();
+}
+
+function syncPrayerIdsFromDom_(){
+  const box=document.getElementById('prayerEditRows');
+  if(!box)return;
+  window._prayerIds=[...box.querySelectorAll('.prayerEditRow')].map(row=>String(row.dataset.memberId||'')).filter(Boolean);
+}
+
+function refreshPrayerRowNumbers_(){
+  const box=document.getElementById('prayerEditRows');
+  if(!box)return;
+  [...box.querySelectorAll('.prayerEditRow')].forEach((row,i)=>{
+    const n=row.querySelector('.prayerEditIndex');
+    if(n)n.textContent=String(i+1);
+  });
+}
+
+function prayerAutoScroll_(clientY){
+  const modal=document.getElementById('modal');
+  if(!modal)return;
+  const rect=modal.getBoundingClientRect();
+  const edge=Math.min(96,Math.max(64,rect.height*.14));
+  let dy=0;
+  if(clientY<rect.top+edge){
+    const ratio=Math.max(0,Math.min(1,(rect.top+edge-clientY)/edge));
+    dy=-Math.ceil(4+18*ratio);
+  }else if(clientY>rect.bottom-edge){
+    const ratio=Math.max(0,Math.min(1,(clientY-(rect.bottom-edge))/edge));
+    dy=Math.ceil(4+18*ratio);
+  }
+  if(dy)modal.scrollBy(0,dy);
+}
+
+function reorderPrayerRowAtY_(dragged,clientY){
+  const box=document.getElementById('prayerEditRows');
+  if(!box||!dragged)return;
+  const rows=[...box.querySelectorAll('.prayerEditRow')].filter(row=>row!==dragged);
+  let before=null;
+  for(const row of rows){
+    const r=row.getBoundingClientRect();
+    if(clientY<r.top+r.height/2){before=row;break}
+  }
+  if(before){
+    if(dragged.nextElementSibling!==before)box.insertBefore(dragged,before);
+  }else if(box.lastElementChild!==dragged){
+    box.appendChild(dragged);
+  }
+  refreshPrayerRowNumbers_();
+}
+
+function cancelPrayerDrag_(){
+  const st=prayerDragState_;
+  if(!st)return;
+  window.removeEventListener('pointermove',st.move,{capture:true});
+  window.removeEventListener('pointerup',st.end,{capture:true});
+  window.removeEventListener('pointercancel',st.end,{capture:true});
+  if(st.row)st.row.classList.remove('dragging');
+  prayerDragState_=null;
+}
+
+function bindPrayerDrag_(){
+  const box=document.getElementById('prayerEditRows');
+  if(!box)return;
+  box.querySelectorAll('.prayerDragHandle').forEach(handle=>{
+    handle.onpointerdown=e=>{
+      if(e.pointerType==='mouse'&&e.button!==0)return;
+      const row=handle.closest('.prayerEditRow');
+      if(!row)return;
+      e.preventDefault();
+      e.stopPropagation();
+      cancelPrayerDrag_();
+
+      row.classList.add('dragging');
+      try{handle.setPointerCapture(e.pointerId)}catch(_){}
+      try{if(navigator.vibrate)navigator.vibrate(10)}catch(_){}
+
+      const move=ev=>{
+        if(!prayerDragState_||prayerDragState_.pointerId!==ev.pointerId)return;
+        ev.preventDefault();
+        prayerAutoScroll_(ev.clientY);
+        reorderPrayerRowAtY_(row,ev.clientY);
+      };
+      const end=ev=>{
+        if(!prayerDragState_||prayerDragState_.pointerId!==ev.pointerId)return;
+        ev.preventDefault();
+        window.removeEventListener('pointermove',move,{capture:true});
+        window.removeEventListener('pointerup',end,{capture:true});
+        window.removeEventListener('pointercancel',end,{capture:true});
+        row.classList.remove('dragging');
+        prayerDragState_=null;
+        syncPrayerIdsFromDom_();
+        refreshPrayerRowNumbers_();
+        try{if(navigator.vibrate)navigator.vibrate(8)}catch(_){}
+      };
+
+      prayerDragState_={row,pointerId:e.pointerId,move,end};
+      window.addEventListener('pointermove',move,{capture:true,passive:false});
+      window.addEventListener('pointerup',end,{capture:true,passive:false});
+      window.addEventListener('pointercancel',end,{capture:true,passive:false});
+    };
+  });
 }
 
 function movePrayer(i,delta){
+  // 구버전 호출 호환용. 새 UI에서는 드래그 손잡이를 사용합니다.
   const ids=window._prayerIds||[];
   const j=i+delta;
   if(j<0||j>=ids.length)return;
@@ -2296,6 +2406,7 @@ function movePrayer(i,delta){
 }
 
 function savePrayerOrder(){
+  syncPrayerIdsFromDom_();
   queueMutation('prayerOrderSet',{memberIds:window._prayerIds||[]});
   closeModal();
 }
