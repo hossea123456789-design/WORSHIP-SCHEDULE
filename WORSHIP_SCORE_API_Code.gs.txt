@@ -1,5 +1,5 @@
 /**
- * WORSHIP_SCORE_API v3.12.7
+ * WORSHIP_SCORE_API v3.12.8
  * 찬양팀 악보 전용 standalone Apps Script backend
  *
  * 현재 프런트(v3.12.6) 계약:
@@ -16,7 +16,7 @@
  * - https://www.googleapis.com/auth/script.external_request
  */
 
-const SCORE_API_VERSION = 'v3.12.7';
+const SCORE_API_VERSION = 'v3.12.8';
 
 const SCORE_REQUIRED_SCOPES = Object.freeze([
   'https://www.googleapis.com/auth/drive',
@@ -39,6 +39,17 @@ const SCORE_STORE = Object.freeze({
   STALE_UPLOAD_MS: 24 * 60 * 60 * 1000
 });
 
+const AFTER_SCORE_STORE = Object.freeze({
+  FOLDER_PROP: 'WORSHIP_AFTER_SCORE_FOLDER_ID',
+  FILE_PROP: 'WORSHIP_AFTER_SCORE_FILE_ID',
+  NAME_PROP: 'WORSHIP_AFTER_SCORE_FILE_NAME',
+  MIME_PROP: 'WORSHIP_AFTER_SCORE_FILE_MIME',
+  UPDATED_PROP: 'WORSHIP_AFTER_SCORE_UPDATED_AT',
+  UPLOAD_PREFIX: 'WORSHIP_AFTER_SCORE_UPLOAD_',
+  FOLDER_NAME: 'WORSHIP-SCHEDULE_AFTER_SERVICE_SCORE',
+  YOUTUBE_LINKS_PROP: 'WORSHIP_AFTER_YOUTUBE_LINKS'
+});
+
 function resetScoreAuthorization() {
   ScriptApp.invalidateAuth();
   return '기존 Apps Script 권한을 초기화했습니다. 편집기를 새로고침한 뒤 setupScoreStandalone을 실행해주세요. 누락된 권한은 setupScoreStandalone이 자동으로 요청합니다.';
@@ -59,6 +70,7 @@ function setupScoreStandalone() {
   ScriptApp.requireScopes(ScriptApp.AuthMode.FULL, SCORE_REQUIRED_SCOPES);
 
   const folder = getScoreFolder_(true);
+  const afterFolder = getAfterScoreFolder_(true);
   const rootName = DriveApp.getRootFolder().getName();
 
   // DriveApp 자체의 쓰기 권한을 실제로 확인합니다.
@@ -83,8 +95,10 @@ function setupScoreStandalone() {
     'WORSHIP_SCORE_API 설정 완료',
     '버전: ' + SCORE_API_VERSION,
     'Drive 루트: ' + rootName,
-    '악보 폴더: ' + folder.getName(),
-    '폴더 ID: ' + folder.getId(),
+    '주일 악보 폴더: ' + folder.getName(),
+    '주일 악보 폴더 ID: ' + folder.getId(),
+    '예배 후 악보 폴더: ' + afterFolder.getName(),
+    '예배 후 악보 폴더 ID: ' + afterFolder.getId(),
     'Drive API 쓰기 권한: 정상'
   ].join('\n');
 }
@@ -104,6 +118,20 @@ function doGet(e) {
         service: SCORE_STORE.APP,
         version: SCORE_API_VERSION,
         file: getCurrentScoreMeta_()
+      };
+    } else if (action === 'afterMeta') {
+      data = {
+        ok: true,
+        service: SCORE_STORE.APP,
+        version: SCORE_API_VERSION,
+        file: getAfterScoreMeta_()
+      };
+    } else if (action === 'afterLinks') {
+      data = {
+        ok: true,
+        service: SCORE_STORE.APP,
+        version: SCORE_API_VERSION,
+        links: getAfterYoutubeLinks_()
       };
     } else {
       data = {
@@ -146,6 +174,49 @@ function doPost(e) {
         service: SCORE_STORE.APP,
         version: SCORE_API_VERSION,
         file: getCurrentScoreMeta_()
+      }, requestId);
+    }
+
+    if (action === 'afterMeta') {
+      return scoreReply_({
+        ok: true,
+        service: SCORE_STORE.APP,
+        version: SCORE_API_VERSION,
+        file: getAfterScoreMeta_()
+      }, requestId);
+    }
+    if (action === 'afterLinks') {
+      return scoreReply_({
+        ok: true,
+        service: SCORE_STORE.APP,
+        version: SCORE_API_VERSION,
+        links: getAfterYoutubeLinks_()
+      }, requestId);
+    }
+    if (action === 'afterLinksSet') {
+      return scoreReply_({
+        ok: true,
+        service: SCORE_STORE.APP,
+        version: SCORE_API_VERSION,
+        links: setAfterYoutubeLinks_(p.linksJson)
+      }, requestId);
+    }
+    if (action === 'afterUploadDirect') {
+      return scoreReply_(uploadAfterScoreDirect_(p), requestId);
+    }
+    if (action === 'afterUploadStart') {
+      return scoreReply_(startAfterScoreUpload_(p), requestId);
+    }
+    if (action === 'afterUploadChunk') {
+      return scoreReply_(uploadAfterScoreChunk_(p), requestId);
+    }
+    if (action === 'afterDelete') {
+      deleteAfterScore_();
+      return scoreReply_({
+        ok: true,
+        service: SCORE_STORE.APP,
+        version: SCORE_API_VERSION,
+        file: null
       }, requestId);
     }
 
@@ -203,7 +274,7 @@ function scoreHealth_() {
     service: SCORE_STORE.APP,
     version: SCORE_API_VERSION,
     storageReady: true,
-    capabilities: ['meta','uploadDirect','uploadStart','uploadChunk','delete'],
+    capabilities: ['meta','uploadDirect','uploadStart','uploadChunk','delete','afterMeta','afterUploadDirect','afterUploadStart','afterUploadChunk','afterDelete','afterLinks','afterLinksSet'],
     folderId: folder.getId(),
     file: getCurrentScoreMeta_()
   };
@@ -749,13 +820,432 @@ function getScoreFolder_(createIfMissing) {
   return folder;
 }
 
+
+function getAfterScoreFolder_(createIfMissing) {
+  const props = PropertiesService.getScriptProperties();
+  const savedId = String(props.getProperty(AFTER_SCORE_STORE.FOLDER_PROP) || '');
+  const saved = scoreFolderByIdIfUsable_(savedId);
+  if (saved) return saved;
+
+  const currentFileId = String(props.getProperty(AFTER_SCORE_STORE.FILE_PROP) || '');
+  const root = DriveApp.getRootFolder();
+  const it = root.getFoldersByName(AFTER_SCORE_STORE.FOLDER_NAME);
+  let newest = null;
+  let newestTime = -1;
+
+  while (it.hasNext()) {
+    const folder = it.next();
+    try {
+      if (folder.isTrashed()) continue;
+      if (currentFileId && folderContainsFileId_(folder, currentFileId)) {
+        props.setProperty(AFTER_SCORE_STORE.FOLDER_PROP, folder.getId());
+        return folder;
+      }
+      const updated = folder.getLastUpdated();
+      const time = updated ? updated.getTime() : 0;
+      if (!newest || time > newestTime) {
+        newest = folder;
+        newestTime = time;
+      }
+    } catch (_) {}
+  }
+
+  if (newest) {
+    props.setProperty(AFTER_SCORE_STORE.FOLDER_PROP, newest.getId());
+    return newest;
+  }
+
+  if (!createIfMissing) return null;
+  const folder = DriveApp.createFolder(AFTER_SCORE_STORE.FOLDER_NAME);
+  props.setProperty(AFTER_SCORE_STORE.FOLDER_PROP, folder.getId());
+  return folder;
+}
+
+function clearAfterScoreProps_() {
+  const props = PropertiesService.getScriptProperties();
+  props.deleteProperty(AFTER_SCORE_STORE.FILE_PROP);
+  props.deleteProperty(AFTER_SCORE_STORE.NAME_PROP);
+  props.deleteProperty(AFTER_SCORE_STORE.MIME_PROP);
+  props.deleteProperty(AFTER_SCORE_STORE.UPDATED_PROP);
+}
+
+function getAfterScoreMeta_() {
+  const props = PropertiesService.getScriptProperties();
+  const fileId = String(props.getProperty(AFTER_SCORE_STORE.FILE_PROP) || '');
+
+  if (fileId) {
+    try {
+      const file = DriveApp.getFileById(fileId);
+      if (!file.isTrashed()) {
+        return buildScoreMeta_(
+          file,
+          String(props.getProperty(AFTER_SCORE_STORE.UPDATED_PROP) || '')
+        );
+      }
+    } catch (_) {}
+    clearAfterScoreProps_();
+  }
+
+  const folder = getAfterScoreFolder_(false);
+  if (!folder) return null;
+
+  const files = folder.getFiles();
+  let newest = null;
+  let newestTime = -1;
+  while (files.hasNext()) {
+    const file = files.next();
+    try {
+      if (file.isTrashed()) continue;
+      const t = file.getLastUpdated().getTime();
+      if (t > newestTime) {
+        newest = file;
+        newestTime = t;
+      }
+    } catch (_) {}
+  }
+  if (!newest) return null;
+
+  const updatedAt = Utilities.formatDate(
+    newest.getLastUpdated(),
+    Session.getScriptTimeZone() || 'Asia/Seoul',
+    'yyyy-MM-dd HH:mm:ss'
+  );
+  props.setProperties({
+    [AFTER_SCORE_STORE.FILE_PROP]: newest.getId(),
+    [AFTER_SCORE_STORE.NAME_PROP]: newest.getName(),
+    [AFTER_SCORE_STORE.MIME_PROP]: newest.getMimeType(),
+    [AFTER_SCORE_STORE.UPDATED_PROP]: updatedAt
+  }, true);
+  return buildScoreMeta_(newest, updatedAt);
+}
+
+function finalizeAfterScore_(newFile, fileName, mimeType) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const folder = getAfterScoreFolder_(true);
+    const updatedAt = Utilities.formatDate(
+      new Date(),
+      Session.getScriptTimeZone() || 'Asia/Seoul',
+      'yyyy-MM-dd HH:mm:ss'
+    );
+    props.setProperties({
+      [AFTER_SCORE_STORE.FILE_PROP]: newFile.getId(),
+      [AFTER_SCORE_STORE.NAME_PROP]: fileName || newFile.getName(),
+      [AFTER_SCORE_STORE.MIME_PROP]: mimeType || newFile.getMimeType(),
+      [AFTER_SCORE_STORE.UPDATED_PROP]: updatedAt
+    }, true);
+
+    const files = folder.getFiles();
+    while (files.hasNext()) {
+      const oldFile = files.next();
+      if (oldFile.getId() !== newFile.getId()) {
+        try { oldFile.setTrashed(true); } catch (_) {}
+      }
+    }
+    return updatedAt;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function deleteAfterScore_() {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const folder = getAfterScoreFolder_(false);
+    if (folder) {
+      const files = folder.getFiles();
+      while (files.hasNext()) {
+        try { files.next().setTrashed(true); } catch (_) {}
+      }
+    }
+    clearAfterScoreProps_();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function uploadAfterScoreDirect_(p) {
+  cleanupStaleScoreUploads_();
+
+  const fileName = sanitizeScoreFileName_(String(p.fileName || '').trim());
+  const mimeType = normalizeScoreMime_(String(p.mimeType || ''), fileName);
+  const totalSize = Number(p.totalSize || 0);
+  const dataBase64 = String(p.dataBase64 || '');
+
+  validateScoreUpload_(fileName, mimeType, totalSize);
+  if (totalSize > SCORE_STORE.DIRECT_MAX_BYTES) {
+    throw new Error('직접 업로드 허용 크기를 초과했습니다. 분할 업로드를 사용해주세요.');
+  }
+  if (!dataBase64) throw new Error('파일 데이터가 비어 있습니다.');
+
+  const bytes = Utilities.base64Decode(dataBase64);
+  if (bytes.length !== totalSize) throw new Error('파일 크기 정보가 일치하지 않습니다.');
+
+  const folder = getAfterScoreFolder_(true);
+  const blob = Utilities.newBlob(bytes, mimeType, fileName);
+  const file = folder.createFile(blob);
+
+  try {
+    makeScoreFilePublic_(file);
+    const updatedAt = finalizeAfterScore_(file, fileName, mimeType);
+    return {
+      ok: true,
+      service: SCORE_STORE.APP,
+      version: SCORE_API_VERSION,
+      complete: true,
+      transport: 'direct',
+      receivedBytes: totalSize,
+      file: buildScoreMeta_(file, updatedAt)
+    };
+  } catch (err) {
+    try { file.setTrashed(true); } catch (_) {}
+    throw err;
+  }
+}
+
+function startAfterScoreUpload_(p) {
+  cleanupStaleScoreUploads_();
+
+  const fileName = sanitizeScoreFileName_(String(p.fileName || '').trim());
+  const mimeType = normalizeScoreMime_(String(p.mimeType || ''), fileName);
+  const totalSize = Number(p.totalSize || 0);
+  validateScoreUpload_(fileName, mimeType, totalSize);
+
+  const folder = getAfterScoreFolder_(true);
+  const initUrl =
+    'https://www.googleapis.com/upload/drive/v3/files' +
+    '?uploadType=resumable&fields=id,name,mimeType,size';
+
+  const response = UrlFetchApp.fetch(initUrl, {
+    method: 'post',
+    contentType: 'application/json; charset=UTF-8',
+    headers: {
+      Authorization: 'Bearer ' + ScriptApp.getOAuthToken(),
+      'X-Upload-Content-Type': mimeType,
+      'X-Upload-Content-Length': String(totalSize)
+    },
+    payload: JSON.stringify({
+      name: fileName,
+      parents: [folder.getId()]
+    }),
+    muteHttpExceptions: true
+  });
+
+  const status = response.getResponseCode();
+  if (status < 200 || status >= 300) {
+    const detail = truncate_(response.getContentText(), 700);
+    throw new Error('예배 후 악보 Drive 업로드 준비 실패 (' + status + '): ' + detail);
+  }
+
+  const sessionUrl = String(
+    getHeaderIgnoreCase_(response.getAllHeaders(), 'Location') || ''
+  );
+  if (!sessionUrl) throw new Error('Drive 업로드 세션 URL을 받지 못했습니다.');
+
+  const uploadId = Utilities.getUuid();
+  const meta = {
+    uploadId: uploadId,
+    sessionUrl: sessionUrl,
+    fileName: fileName,
+    mimeType: mimeType,
+    totalSize: totalSize,
+    nextStart: 0,
+    createdAt: Date.now(),
+    complete: false,
+    fileId: '',
+    updatedAt: ''
+  };
+
+  PropertiesService.getScriptProperties().setProperty(
+    AFTER_SCORE_STORE.UPLOAD_PREFIX + uploadId,
+    JSON.stringify(meta)
+  );
+
+  return {
+    ok: true,
+    service: SCORE_STORE.APP,
+    version: SCORE_API_VERSION,
+    transport: 'resumable',
+    uploadId: uploadId,
+    chunkSize: SCORE_STORE.CHUNK_SIZE,
+    totalSize: totalSize
+  };
+}
+
+function uploadAfterScoreChunk_(p) {
+  const uploadId = String(p.uploadId || '');
+  if (!uploadId) throw new Error('업로드 세션 정보가 없습니다.');
+
+  const props = PropertiesService.getScriptProperties();
+  const key = AFTER_SCORE_STORE.UPLOAD_PREFIX + uploadId;
+  const raw = props.getProperty(key);
+  if (!raw) throw new Error('업로드 세션이 만료되었습니다. 처음부터 다시 업로드해주세요.');
+
+  let meta;
+  try {
+    meta = JSON.parse(raw);
+  } catch (_) {
+    props.deleteProperty(key);
+    throw new Error('업로드 세션 정보가 손상되었습니다. 다시 업로드해주세요.');
+  }
+
+  if (meta.complete && meta.fileId) {
+    const completedFile = DriveApp.getFileById(String(meta.fileId));
+    return {
+      ok: true,
+      service: SCORE_STORE.APP,
+      version: SCORE_API_VERSION,
+      complete: true,
+      transport: 'resumable',
+      receivedBytes: Number(meta.totalSize || 0),
+      file: buildScoreMeta_(completedFile, String(meta.updatedAt || ''))
+    };
+  }
+
+  const start = Number(p.start || 0);
+  const end = Number(p.end || -1);
+  const totalSize = Number(p.totalSize || meta.totalSize || 0);
+  const dataBase64 = String(p.dataBase64 || '');
+
+  if (!dataBase64) throw new Error('업로드 조각 데이터가 비어 있습니다.');
+  if (totalSize !== Number(meta.totalSize)) throw new Error('파일 크기 정보가 일치하지 않습니다.');
+  if (start < 0 || end < start || end >= totalSize) throw new Error('업로드 범위가 올바르지 않습니다.');
+
+  const expectedNext = Number(meta.nextStart || 0);
+  if (end < expectedNext) {
+    return {
+      ok: true,
+      service: SCORE_STORE.APP,
+      version: SCORE_API_VERSION,
+      complete: false,
+      transport: 'resumable',
+      receivedBytes: expectedNext
+    };
+  }
+  if (start !== expectedNext) {
+    throw new Error('업로드 순서가 어긋났습니다. 예상 시작 위치: ' + expectedNext + ', 받은 위치: ' + start);
+  }
+
+  const bytes = Utilities.base64Decode(dataBase64);
+  if (bytes.length !== end - start + 1) throw new Error('업로드 조각 크기가 일치하지 않습니다.');
+
+  const response = UrlFetchApp.fetch(String(meta.sessionUrl), {
+    method: 'put',
+    contentType: String(meta.mimeType || 'application/octet-stream'),
+    headers: {
+      'Content-Range': 'bytes ' + start + '-' + end + '/' + totalSize
+    },
+    payload: bytes,
+    muteHttpExceptions: true
+  });
+
+  const status = response.getResponseCode();
+  if (status === 308) {
+    meta.nextStart = end + 1;
+    props.setProperty(key, JSON.stringify(meta));
+    return {
+      ok: true,
+      service: SCORE_STORE.APP,
+      version: SCORE_API_VERSION,
+      complete: false,
+      transport: 'resumable',
+      receivedBytes: meta.nextStart
+    };
+  }
+
+  if (status >= 200 && status < 300) {
+    let driveMeta = {};
+    try { driveMeta = JSON.parse(response.getContentText() || '{}'); } catch (_) {}
+    const fileId = String(driveMeta.id || '');
+    if (!fileId) throw new Error('Drive 업로드는 완료됐지만 파일 ID를 받지 못했습니다.');
+
+    const file = DriveApp.getFileById(fileId);
+    try {
+      makeScoreFilePublic_(file);
+      const updatedAt = finalizeAfterScore_(
+        file,
+        String(meta.fileName || file.getName()),
+        String(meta.mimeType || file.getMimeType())
+      );
+      meta.complete = true;
+      meta.fileId = fileId;
+      meta.updatedAt = updatedAt;
+      meta.nextStart = totalSize;
+      props.setProperty(key, JSON.stringify(meta));
+
+      return {
+        ok: true,
+        service: SCORE_STORE.APP,
+        version: SCORE_API_VERSION,
+        complete: true,
+        transport: 'resumable',
+        receivedBytes: totalSize,
+        file: buildScoreMeta_(file, updatedAt)
+      };
+    } catch (err) {
+      try { file.setTrashed(true); } catch (_) {}
+      throw err;
+    }
+  }
+
+  throw new Error(
+    '예배 후 악보 Drive 업로드 실패 (' + status + '): ' +
+    truncate_(response.getContentText(), 500)
+  );
+}
+
+function normalizeAfterYoutubeLinks_(rawLinks) {
+  const input = Array.isArray(rawLinks) ? rawLinks : [];
+  const out = [];
+  const seen = {};
+  input.slice(0, 30).forEach(function(value) {
+    const url = String(value || '').trim();
+    if (!url || url.length > 500) return;
+    if (!/^https?:\/\/(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(url) &&
+        !/^https?:\/\/(?:www\.)?youtube-nocookie\.com\//i.test(url)) return;
+    if (seen[url]) return;
+    seen[url] = true;
+    out.push(url);
+  });
+  return out;
+}
+
+function getAfterYoutubeLinks_() {
+  const raw = PropertiesService.getScriptProperties().getProperty(AFTER_SCORE_STORE.YOUTUBE_LINKS_PROP);
+  if (!raw) return [];
+  try {
+    return normalizeAfterYoutubeLinks_(JSON.parse(raw));
+  } catch (_) {
+    return [];
+  }
+}
+
+function setAfterYoutubeLinks_(linksJson) {
+  let parsed = [];
+  try {
+    parsed = JSON.parse(String(linksJson || '[]'));
+  } catch (_) {
+    throw new Error('YouTube 링크 목록 형식이 올바르지 않습니다.');
+  }
+  const links = normalizeAfterYoutubeLinks_(parsed);
+  PropertiesService.getScriptProperties().setProperty(
+    AFTER_SCORE_STORE.YOUTUBE_LINKS_PROP,
+    JSON.stringify(links)
+  );
+  return links;
+}
+
 function cleanupStaleScoreUploads_() {
   const props = PropertiesService.getScriptProperties();
   const all = props.getProperties();
   const cutoff = Date.now() - SCORE_STORE.STALE_UPLOAD_MS;
 
   Object.keys(all).forEach(function(key) {
-    if (key.indexOf(SCORE_STORE.UPLOAD_PREFIX) !== 0) return;
+    if (key.indexOf(SCORE_STORE.UPLOAD_PREFIX) !== 0 &&
+        key.indexOf(AFTER_SCORE_STORE.UPLOAD_PREFIX) !== 0) return;
     try {
       const meta = JSON.parse(all[key] || '{}');
       if (!meta.createdAt || Number(meta.createdAt) < cutoff) {
