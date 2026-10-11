@@ -152,7 +152,7 @@ const DEFAULT_HONORIFICS=['집사님','목사님','사모님','권사님','장�
 const APP_PUBLIC_URL='https://hossea123456789-design.github.io/WORSHIP-SCHEDULE/';
 const KAKAO_JAVASCRIPT_KEY='c14b7dd534f10ac1fc266ba52c9e7a56';
 const STORAGE_PREFIX='worship_fast_v3_';
-const APP_VERSION='v3.20.6';
+const APP_VERSION='v3.20.7';
 const BOOTSTRAP_TIMEOUT_MS=25000;
 const MUTATE_TIMEOUT_MS=25000;
 
@@ -166,6 +166,7 @@ let monthDraft={};
 let monthSaveBusy=false;
 let dateSettingOffset=0;
 let dateDraftByMonth={};
+let dateDraftEditsByMonth={}; // 저장 전 사용자가 직접 바꾼 날짜만 보관
 let dateSaveBusy=false;
 let pickerDate=null,pickerRoleId=null,pickerSelected=[];
 let pending=[];
@@ -1628,7 +1629,7 @@ function applyOptimistic(m){
   }
 
   if(m.type==='eventSet'){
-    STATE.events=STATE.events.filter(x=>String(x.event_date)!==String(p.date));
+    STATE.events=STATE.events.filter(x=>normalizeDateKey(x.event_date)!==normalizeDateKey(p.date));
     STATE.events.push({
       event_date:p.date,
       event_type:'worship',
@@ -2001,6 +2002,7 @@ function syncRuntimeMonth_(){
   }
 
   dateDraftByMonth={};
+  dateDraftEditsByMonth={};
   logEvent('INFO','MONTH_ROLLOVER',`from=${oldKey} to=${nowKey}`);
   return true;
 }
@@ -3537,22 +3539,36 @@ function deleteHonorific_(title){
 }
 
 function getDateDraftSet_(mk){
-  if(!dateDraftByMonth[mk])dateDraftByMonth[mk]=new Set(selectedDates(mk));
-  return dateDraftByMonth[mk];
+  // 기존 문제: 달력 선택을 처음 열었을 때의 Set을 계속 재사용했습니다.
+  // 멤버 저장 또는 서버 갱신 후 삭제된 24일 같은 날짜가 다시 선택된 것으로 보였습니다.
+  // 매 렌더마다 서버/로컬 확정 상태를 기준으로 만들고 '저장 전 직접 변경'만 합칩니다.
+  const draft=new Set(selectedDates(mk));
+  const edits=dateDraftEditsByMonth[mk]||{};
+  for(const [date,active] of Object.entries(edits)){
+    if(active)draft.add(date);
+    else draft.delete(date);
+  }
+  dateDraftByMonth[mk]=draft;
+  return draft;
 }
 function dateDraftChangedCount_(mk){
   const original=new Set(selectedDates(mk));
   const draft=getDateDraftSet_(mk);
-  const all=new Set([...original,...draft]);
   let count=0;
-  all.forEach(d=>{if(original.has(d)!==draft.has(d))count++});
+  const all=new Set([...original,...draft]);
+  all.forEach(date=>{if(original.has(date)!==draft.has(date))count++});
   return count;
 }
 function toggleEventDate(date){
   if(!requireFreshWrite_('날짜 수정'))return;
   const mk=date.slice(0,7);
   const draft=getDateDraftSet_(mk);
-  if(draft.has(date))draft.delete(date); else draft.add(date);
+  const next=!draft.has(date);
+  const serverSelected=selectedDates(mk).includes(date);
+  if(!dateDraftEditsByMonth[mk])dateDraftEditsByMonth[mk]={};
+  if(next===serverSelected)delete dateDraftEditsByMonth[mk][date];
+  else dateDraftEditsByMonth[mk][date]=next;
+  if(!Object.keys(dateDraftEditsByMonth[mk]).length)delete dateDraftEditsByMonth[mk];
   renderDateSettings();
 }
 async function saveEventDateDraft(){
@@ -3566,7 +3582,13 @@ async function saveEventDateDraft(){
   const all=[...new Set([...original,...draft])].sort();
   const changed=all.filter(d=>original.has(d)!==draft.has(d));
 
-  if(!changed.length){showToast('변경된 날짜가 없습니다');return;}
+  if(!changed.length){
+    delete dateDraftEditsByMonth[mk];
+    delete dateDraftByMonth[mk];
+    renderDateSettings();
+    showToast('변경된 날짜가 없습니다');
+    return;
+  }
 
   dateSaveBusy=true;
   renderDateSettings();
@@ -3595,6 +3617,7 @@ async function saveEventDateDraft(){
     if(STATE&&res.revision!=null)STATE.revision=res.revision;
     cacheState();
     delete dateDraftByMonth[mk];
+    delete dateDraftEditsByMonth[mk];
 
     dateSaveBusy=false;
     renderAll();
@@ -4306,6 +4329,13 @@ document.querySelectorAll('.navBtn').forEach(b=>b.onclick=()=>{
 async function pollRevision(force=false){
   if(!STATE||flushing||readInFlight||dateSaveBusy||monthSaveBusy)return;
   if(pending.length&&!hardConnectionDown)return;
+  // 구조 변경(멤버/역할/기도 인원) 직후엔 로컬 revision만 최신 상태가
+  // 되는 경우가 있으므로 revision 일치 여부와 무관하게 전체 데이터를 다시 읽습니다.
+  if(needsFullRefresh&&!pending.length){
+    logEvent('INFO','PENDING_STRUCTURAL_REFRESH','force='+force);
+    await bootstrap(false,true);
+    return;
+  }
 
   const now=Date.now();
   if(!force&&hardConnectionDown&&reconnectTimer)return;
