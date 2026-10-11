@@ -105,7 +105,7 @@ main{padding:15px 15px 36px}.panel{display:none}.panel.active{display:block}.sec
 
 const PLAYLIST_ID='PLDThR_8ShZAFTVEZgp2jtZaha8bThHZXB';
 const STORAGE_PREFIX='worship_fast_v3_';
-const APP_VERSION='v3.18.2';
+const APP_VERSION='v3.18.3';
 const BOOTSTRAP_TIMEOUT_MS=25000;
 const MUTATE_TIMEOUT_MS=25000;
 
@@ -583,11 +583,21 @@ function holidayMap(){
 
 function horizonStartMonth(){
   const d=new Date(currentTodayKey()+'T00:00:00');
-  return new Date(d.getFullYear(),d.getMonth(),1);
+  return new Date(d.getFullYear(),0,1);
 }
-function horizonEndMonth(){return addMonths(horizonStartMonth(),12)}
+function horizonStartKey(){return monthKey(horizonStartMonth())}
+function horizonEndMonth(){
+  const d=new Date(currentTodayKey()+'T00:00:00');
+  const yearEnd=new Date(d.getFullYear(),11,1);
+  const sixMonthsLater=addMonths(new Date(d.getFullYear(),d.getMonth(),1),6);
+  return monthNum(monthKey(sixMonthsLater))>monthNum(monthKey(yearEnd))
+    ?sixMonthsLater
+    :yearEnd;
+}
 function horizonEndKey(){return monthKey(horizonEndMonth())}
+function isBeforeHorizon(mk){return monthNum(mk)<monthNum(horizonStartKey())}
 function isBeyondHorizon(mk){return monthNum(mk)>monthNum(horizonEndKey())}
+function isOutsideHorizon(mk){return isBeforeHorizon(mk)||isBeyondHorizon(mk)}
 
 let syncProgressTimer=null;
 let syncProgressHideTimer=null;
@@ -1051,7 +1061,7 @@ function defaultSundays(mk){
 }
 
 function selectedDates(mk){
-  if(isBeyondHorizon(mk))return[];
+  if(isOutsideHorizon(mk))return[];
   const map={};
   defaultSundays(mk).forEach(k=>map[k]=true);
 
@@ -1069,7 +1079,7 @@ function monthNum(mk){
 }
 
 function latestBase(mk){
-  if(isBeyondHorizon(mk))return'';
+  if(isOutsideHorizon(mk))return'';
   const target=monthNum(mk);
   const months=[...new Set(
     STATE.rotationBase
@@ -1182,7 +1192,7 @@ function syncRuntimeMonth_(){
   const oldKey=runtimeMonthKey;
   runtimeMonthKey=nowKey;
 
-  if(viewMonth&&monthKey(viewMonth)===oldKey){
+  if(viewMonth&&(monthKey(viewMonth)===oldKey||isOutsideHorizon(monthKey(viewMonth)))){
     const d=new Date(currentTodayKey()+'T00:00:00');
     viewMonth=new Date(d.getFullYear(),d.getMonth(),1);
   }
@@ -1474,6 +1484,10 @@ function renderMonth(){
   const hol=holidayMap();
   const base=latestBase(mk);
 
+  if(isBeforeHorizon(mk)){
+    viewMonth=horizonStartMonth();
+    return renderMonth();
+  }
   if(isBeyondHorizon(mk)){
     viewMonth=horizonEndMonth();
     return renderMonth();
@@ -1481,8 +1495,14 @@ function renderMonth(){
   document.getElementById('monthTitle').textContent=`${y}년 ${m}월`;
   const prevBtn=document.getElementById('prevMonth');
   const nextBtn=document.getElementById('nextMonth');
-  if(prevBtn)prevBtn.disabled=false;
-  if(nextBtn){nextBtn.disabled=monthNum(mk)>=monthNum(horizonEndKey());nextBtn.title=nextBtn.disabled?'현재 기준 12개월까지만 자동 편성됩니다.':'';}
+  if(prevBtn){
+    prevBtn.disabled=monthNum(mk)<=monthNum(horizonStartKey());
+    prevBtn.title=prevBtn.disabled?'현재 연도의 1월부터 표시됩니다.':'';
+  }
+  if(nextBtn){
+    nextBtn.disabled=monthNum(mk)>=monthNum(horizonEndKey());
+    nextBtn.title=nextBtn.disabled?'올해 12월 또는 현재 월 기준 6개월 뒤까지 표시됩니다.':'';
+  }
   const editingThisMonth=monthEdit&&monthDraftMonth===mk;
   const draftCount=editingThisMonth?monthDraftCount():0;
   const completeBtn=document.getElementById('completeMonth');
@@ -2832,14 +2852,19 @@ document.getElementById('todayPill').onclick=openCurrentMonthFromHeader_;
 
 document.getElementById('prevMonth').onclick=()=>{
   if(monthEdit&&!discardMonthEdit())return;
-  viewMonth=new Date(viewMonth.getFullYear(),viewMonth.getMonth()-1,1);
+  const prev=new Date(viewMonth.getFullYear(),viewMonth.getMonth()-1,1);
+  if(monthNum(monthKey(prev))<monthNum(horizonStartKey())){
+    showToast(horizonStartKey().slice(0,4)+'년 1월부터 표시됩니다');
+    return;
+  }
+  viewMonth=prev;
   renderMonth();
 };
 document.getElementById('nextMonth').onclick=()=>{
   if(monthEdit&&!discardMonthEdit())return;
   const next=new Date(viewMonth.getFullYear(),viewMonth.getMonth()+1,1);
   if(monthNum(monthKey(next))>monthNum(horizonEndKey())){
-    showToast(`자동 편성은 ${horizonEndKey().replace('-','년 ')}월까지 표시됩니다`);
+    showToast(`월별 편성은 ${horizonEndKey().replace('-','년 ')}월까지 표시됩니다`);
     return;
   }
   viewMonth=next;
