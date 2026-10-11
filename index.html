@@ -152,7 +152,7 @@ const DEFAULT_HONORIFICS=['집사님','목사님','사모님','권사님','장�
 const APP_PUBLIC_URL='https://hossea123456789-design.github.io/WORSHIP-SCHEDULE/';
 const KAKAO_JAVASCRIPT_KEY='c14b7dd534f10ac1fc266ba52c9e7a56';
 const STORAGE_PREFIX='worship_fast_v3_';
-const APP_VERSION='v3.20.5';
+const APP_VERSION='v3.20.6';
 const BOOTSTRAP_TIMEOUT_MS=25000;
 const MUTATE_TIMEOUT_MS=25000;
 
@@ -1917,15 +1917,42 @@ function activePrayerOrder_(){
     ?STATE.prayerOrder.filter(row=>row&&typeof row==='object'&&(prayerMemberId_(row)||String(row.display_name||'').trim()))
     :[];
 }
+function prayerAnchorDateKey_(value){
+  // Google Sheets 날짜 셀은 Apps Script getValues()에서 Date 객체이며
+  // String(Date) 형태로 전달될 수 있습니다. 여기에 T00:00:00을 추가하면 Invalid Date입니다.
+  const standard=normalizeDateKey(value);
+  if(standard&&Number.isFinite(Date.parse(standard+'T00:00:00Z')))return standard;
+  const raw=String(value==null?'':value).trim();
+  // Apps Script Date.toString(): "Sun Sep 13 2026 00:00:00 GMT+0900 (...)"
+  const english=raw.match(/^(?:[A-Za-z]{3}\s+)?([A-Za-z]{3})\s+(\d{1,2})\s+(\d{4})(?:\s|$)/);
+  if(english){
+    const names=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+    const month=names.indexOf(english[1].toLowerCase())+1;
+    const year=Number(english[3]),day=Number(english[2]);
+    if(month>0&&day>=1&&day<=new Date(Date.UTC(year,month,0)).getUTCDate()){
+      return year+'-'+pad(month)+'-'+pad(day);
+    }
+  }
+  // 시트 API에서 값이 시리얼 번호로 직렬화된 경우도 지원합니다.
+  if(/^\d{5}(?:\.\d+)?$/.test(raw)){
+    const dt=new Date(Date.UTC(1899,11,30)+Math.floor(Number(raw))*86400000);
+    if(Number.isFinite(dt.getTime()))return dt.toISOString().slice(0,10);
+  }
+  // 기도 기준일에 오류가 있어도 명단 전체가 '미정'으로 변경되지 않도록 기본 기준일로 복구합니다.
+  return'2026-09-13';
+}
 function prayerNameForSunday(d){
   const arr=activePrayerOrder_();
   if(!arr.length)return'미정';
   const cfg=(STATE&&STATE.config)||{};
-  const anchor=cfg.PRAYER_ANCHOR_DATE||'2026-09-13';
+  const anchor=prayerAnchorDateKey_(cfg.PRAYER_ANCHOR_DATE);
   const anchorId=cfg.PRAYER_ANCHOR_MEMBER_ID||'m_parkseongin';
-  const ad=new Date(anchor+'T00:00:00');
-  const target=d instanceof Date?d:new Date(d);
-  const weeks=Math.round((target-ad)/86400000/7);
+  const targetKey=normalizeDateKey(d);
+  if(!targetKey)return'미정';
+  // 달력 날짜 기준으로 주차를 계산해 기기 시간대/DST와 무관하게 동일하게 표시합니다.
+  const anchorMs=Date.parse(anchor+'T00:00:00Z');
+  const targetMs=Date.parse(targetKey+'T00:00:00Z');
+  const weeks=Math.round((targetMs-anchorMs)/(7*86400000));
   if(!Number.isFinite(weeks))return'미정';
   let anchorIndex=arr.findIndex(row=>String((resolvePrayerMember_(row)||{}).member_id||prayerMemberId_(row))===String(anchorId));
   if(anchorIndex<0)anchorIndex=0;
