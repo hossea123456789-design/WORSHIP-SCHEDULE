@@ -1,0 +1,20 @@
+name: Probe After Links
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/probe-after-links.yml']
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe live score API
+        shell: bash
+        run: |
+          set -x
+          BASE='https://script.google.com/macros/s/AKfycbxYuJAJp0BkCk_aXRhgJEf-P8aOPAnWBk2Ea2WhmkQa7NHHLVB_kVdmsfBdomF9nrQcUA/exec'
+          echo '=== health ==='
+          curl -L --max-time 40 -sS "$BASE?action=health&callback=cb"
+          echo
+          echo '=== afterLinks ==='
+          curl -L --max-time 40 -sS "$BASE?action=afterLinks&callback=cb"
+          echo
