@@ -39,11 +39,16 @@ main{padding:15px 15px 36px}.panel{display:none}.panel.active{display:block}.sec
 .playlistTabHint{font-size:8px;font-weight:850;color:#9aa1ad;letter-spacing:-.1px}.playlistSubTabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px;padding:4px;border:1px solid #e1e4eb;border-radius:13px;background:#f7f8fb;box-shadow:inset 0 1px 0 rgba(255,255,255,.9)}.playlistSubTab{position:relative;border:1px solid #e7e9ef;border-radius:10px;background:#fff;color:#717887;padding:9px 8px;font-size:10px;font-weight:950;cursor:pointer;box-shadow:0 1px 2px rgba(15,23,42,.03);transition:background .15s ease,border-color .15s ease,color .15s ease,transform .08s ease,box-shadow .15s ease}.playlistSubTab:active{transform:translateY(1px);box-shadow:inset 0 1px 2px rgba(15,23,42,.08)}.playlistSubTab.active{background:#171a2b;color:#fff;border-color:#171a2b;box-shadow:0 3px 10px rgba(23,26,43,.15)}.playlistSubTab:not(.active):after{content:"";position:absolute;left:50%;bottom:3px;width:18px;height:2px;border-radius:999px;background:#d6dae3;transform:translateX(-50%);opacity:.85}.playlistSubPane[hidden]{display:none}.playlistPaneTitle{font-size:11px;font-weight:950;color:#343949}.afterYoutubeCard{overflow:hidden}.afterYoutubeBody{padding:12px 13px 14px}.afterSectionSub{font-size:8px;color:var(--muted);margin-top:3px;line-height:1.35}.afterLinkEditor{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px;align-items:stretch}.afterLinkEditor textarea{width:100%;min-height:58px;resize:vertical;border:1px solid #d9dde6;border-radius:11px;padding:9px 10px;font:inherit;font-size:10px;line-height:1.45;color:#343949;background:#fff}.afterLinkEditor .primaryBtn{min-width:76px}.afterYoutubeItem{margin-top:10px;padding:9px;border:1px solid var(--line);border-radius:14px;background:#fafbfe}.afterYoutubeItem:first-child{margin-top:8px}.afterYoutubeHead{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px}.afterYoutubeHead b{font-size:10px}.afterYoutubeHead .ghostBtn{padding:6px 8px;font-size:8px}.afterYoutubeBox{margin:0 0 7px}.afterYoutubeEmpty{margin-top:9px;padding:18px 12px;text-align:center;border:1px dashed #d7dae3;border-radius:13px;color:var(--muted);font-size:9px;line-height:1.5}@media(max-width:520px){.afterLinkEditor{grid-template-columns:1fr}.afterLinkEditor .primaryBtn{width:100%}}.scoreCard{margin-top:12px;overflow:hidden}.scoreHead{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 14px;border-bottom:1px solid var(--line)}.scoreHead h3{margin:0;font-size:13px}.scoreBody{padding:13px}.scoreEmpty{padding:22px 14px;text-align:center;border:1px dashed #d7dae3;border-radius:14px;background:#fafbfe}.scoreEmpty b{display:block;font-size:12px;margin-bottom:5px}.scoreEmpty span{display:block;font-size:9px;color:var(--muted);line-height:1.5}.scoreMeta{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}.scoreName{font-size:12px;font-weight:950;word-break:break-all}.scoreSub{font-size:9px;color:var(--muted);margin-top:3px}.scoreActions{display:flex;gap:6px;flex-wrap:wrap}.scorePreview{position:relative;width:100%;height:62vh;min-height:420px;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#f2f4f7;margin-top:10px}.scorePreview iframe{position:absolute;inset:0;width:100%;height:100%;border:0}@media(max-width:520px){.scorePreview{height:58vh;min-height:360px}}
 .bottomNav{position:fixed;left:50%;bottom:0;transform:translateX(-50%);z-index:50;width:min(900px,100%);display:grid;grid-template-columns:repeat(5,1fr);background:rgba(255,255,255,.97);backdrop-filter:blur(18px);border-top:1px solid var(--line);padding:6px 5px calc(6px + env(safe-area-inset-bottom))}.navBtn{border:0;background:transparent;border-radius:12px;padding:7px 2px;color:#989eaa;font-size:8px;font-weight:900}.navBtn span{display:block;font-size:17px;margin-bottom:2px}.navBtn.active{background:var(--accentSoft);color:var(--accent)}
 .modalBackdrop{position:fixed;inset:0;z-index:80;background:rgba(15,23,42,.45);display:none;touch-action:none;overscroll-behavior:none}.modalBackdrop.show{display:block}html.modalOpen{overflow:hidden;overscroll-behavior:none}html.modalOpen body{overflow:hidden;overscroll-behavior:none;touch-action:none}.sheetModal{position:fixed;left:50%;bottom:0;z-index:90;width:min(900px,100%);max-height:88vh;max-height:88dvh;overflow-x:hidden;overflow-y:auto;overscroll-behavior-x:none;overscroll-behavior-y:none;-webkit-overflow-scrolling:auto;background:#fff;border-radius:22px 22px 0 0;transform:translate(-50%,100%);transition:.2s;box-shadow:0 -20px 60px rgba(0,0,0,.18);padding-bottom:calc(28px + env(safe-area-inset-bottom))}.sheetModal.show{transform:translate(-50%,0)}.modalHead{display:flex;justify-content:space-between;align-items:center;padding:13px 15px;border-bottom:1px solid var(--line);position:sticky;top:0;background:#fff;z-index:2}.modalHead b{font-size:13px}.closeBtn{width:31px;height:31px;border:0;background:#f2f4f8;border-radius:9px;font-weight:950}.modalBody{padding:12px 14px 36px}.pickGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.pickBtn{border:1px solid var(--line);background:#fff;border-radius:11px;padding:11px 8px;font-size:11px;font-weight:900}.pickBtn.selected{background:#171a2b;color:#fff;border-color:#171a2b}.formField{margin-bottom:11px}.formField label{display:block;font-size:10px;font-weight:900;margin-bottom:5px}.formField input,.formField select{width:100%;border:1px solid #d9dde6;border-radius:10px;padding:9px 10px}.checkPill input{display:none}.checkPill span{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:6px 8px;font-size:9px;font-weight:900}.checkPill input:checked+span{background:#171a2b;color:#fff;border-color:#171a2b}.modalActions{display:flex;justify-content:flex-end;gap:6px;margin-top:12px}
-.processStatus{position:fixed;left:50%;bottom:calc(72px + env(safe-area-inset-bottom));z-index:115;transform:translateX(-50%);width:auto;max-width:calc(100vw - 24px);padding:9px 11px 10px;border:1px solid var(--line);border-radius:15px;background:rgba(255,255,255,.98);box-shadow:0 8px 22px rgba(15,23,42,.12);font-size:9px;font-weight:900;color:#596174;pointer-events:none;transition:.2s}
+.processStatus{position:fixed;left:50%;bottom:calc(72px + env(safe-area-inset-bottom));z-index:115;transform:translateX(-50%);width:auto;max-width:calc(100vw - 24px);padding:9px 11px 10px;border:1px solid var(--line);border-radius:15px;background:rgba(255,255,255,.98);box-shadow:0 8px 22px rgba(15,23,42,.12);font-size:9px;font-weight:900;color:#596174;pointer-events:none;transition:transform .22s cubic-bezier(.22,.82,.3,1),background .12s ease,border-color .12s ease,box-shadow .12s ease,color .12s ease}
 .processStatusTop{display:flex;align-items:center;gap:7px;min-width:0}.processStatus .dot{width:7px;height:7px;border-radius:50%;background:#98a2b3;flex:0 0 auto}.processStatus #processStatusText{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.processStatusPct{font-size:10px;color:#171a2b;min-width:32px;text-align:right}
 .processStatus.hasProgress{width:min(430px,calc(100vw - 24px))}.processStatus:not(.hasProgress) .processStatusPct{display:none}.processTrack{position:relative;height:6px;margin-top:7px;border-radius:999px;background:#eceef4;overflow:hidden;display:none;box-shadow:inset 0 0 0 1px rgba(93,99,230,.05)}.processStatus.hasProgress .processTrack{display:block}.processBar{position:relative;height:100%;width:0;border-radius:inherit;background:linear-gradient(90deg,#6b70f7 0%,#7c5cff 48%,#39d7ff 100%);box-shadow:0 0 7px rgba(92,99,246,.42),0 0 14px rgba(57,215,255,.16);transition:width .18s cubic-bezier(.22,.8,.28,1)}.processBar:after{content:"";position:absolute;top:0;bottom:0;width:34%;right:-8%;background:linear-gradient(90deg,transparent,rgba(255,255,255,.82),transparent);filter:blur(.2px);animation:progressSweep 1.15s ease-in-out infinite}.processStatusPct{transition:transform .16s ease,text-shadow .16s ease}.processStatus.working .processStatusPct{text-shadow:0 0 8px rgba(93,99,230,.22)}.processStatus.ok .processBar{background:linear-gradient(90deg,#20c981,#38e5a5);box-shadow:0 0 8px rgba(32,201,129,.38),0 0 16px rgba(56,229,165,.16)}.processStatus.ok .processStatusPct{text-shadow:0 0 8px rgba(22,163,106,.22)}
 .processDetail{display:none;margin-top:5px;font-size:8px;font-weight:800;color:#8a90a0;line-height:1.35;white-space:normal}.processStatus.hasDetail .processDetail{display:block}
-.processStatus.working{color:#5d63e6}.processStatus.working .dot{background:#5d63e6;box-shadow:0 0 7px rgba(93,99,230,.55);animation:pulse 1s ease-in-out infinite}.processStatus.ok{color:#16a36a}.processStatus.ok .dot{background:#16a36a;box-shadow:0 0 8px rgba(22,163,106,.42)}.processStatus.error{color:#b42318;border-color:#fecaca;background:#fff7f7}.processStatus.error .dot{background:#d92d20}.processStatus.offline{color:#9a6700;border-color:#fde68a;background:#fffbeb}.processStatus.offline .dot{background:#f59e0b}@keyframes pulse{0%,100%{opacity:.35;transform:scale(.92)}50%{opacity:1;transform:scale(1.08)}}@keyframes progressSweep{0%{transform:translateX(-280%);opacity:0}25%{opacity:.35}55%{opacity:.85}100%{transform:translateX(330%);opacity:0}}
+.processStatus.working{color:#5d63e6}.processStatus.working .dot{background:#5d63e6;box-shadow:0 0 7px rgba(93,99,230,.55);animation:pulse 1s ease-in-out infinite}.processStatus.ok{color:#16a36a}.processStatus.ok .dot{background:#16a36a;box-shadow:0 0 8px rgba(22,163,106,.42)}
+.processStatus.statusDocked{transform:translate(calc(-50% + var(--process-dock-dx,0px)),var(--process-dock-dy,0px));background:transparent;border-color:transparent;box-shadow:none;color:transparent}
+.processStatus.statusDocked #processStatusText,.processStatus.statusDocked .processStatusPct,.processStatus.statusDocked .processTrack,.processStatus.statusDocked .processDetail{opacity:0;visibility:hidden;transition:opacity .09s ease,visibility 0s linear .09s}
+.processStatus.statusDocked .processStatusTop{gap:0}
+.processStatus.statusDocked .dot{width:9px;height:9px;background:#16a36a;box-shadow:0 0 0 3px rgba(22,163,106,.10),0 0 9px rgba(22,163,106,.42);animation:none;transition:width .12s ease,height .12s ease,box-shadow .12s ease}
+.processStatus:not(.statusDocked) #processStatusText,.processStatus:not(.statusDocked) .processStatusPct,.processStatus:not(.statusDocked) .processTrack,.processStatus:not(.statusDocked) .processDetail{transition:opacity .1s ease}.processStatus.error{color:#b42318;border-color:#fecaca;background:#fff7f7}.processStatus.error .dot{background:#d92d20}.processStatus.offline{color:#9a6700;border-color:#fde68a;background:#fffbeb}.processStatus.offline .dot{background:#f59e0b}@keyframes pulse{0%,100%{opacity:.35;transform:scale(.92)}50%{opacity:1;transform:scale(1.08)}}@keyframes progressSweep{0%{transform:translateX(-280%);opacity:0}25%{opacity:.35}55%{opacity:.85}100%{transform:translateX(330%);opacity:0}}
 .errorBanner{display:none;margin:0 0 12px;padding:11px 12px;border:1px solid #fecaca;border-radius:13px;background:#fff7f7;color:#9f1c15;font-size:10px;line-height:1.55}.errorBanner.show{display:flex;align-items:center;justify-content:space-between;gap:10px}.errorBanner button{flex:0 0 auto}
 .skeleton{position:relative;overflow:hidden;background:#eef0f4!important;color:transparent!important;border-color:transparent!important}.skeleton:after{content:"";position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,rgba(255,255,255,.65),transparent);animation:shimmer 1.3s infinite}@keyframes shimmer{100%{transform:translateX(100%)}}
 .logMeta{font-size:9px;color:var(--muted);line-height:1.6}.logActions{display:flex;gap:7px;margin-top:10px}.logActions button{flex:1}
@@ -109,7 +114,7 @@ const DEFAULT_HONORIFICS=['집사님','목사님','사모님','권사님','장�
 const APP_PUBLIC_URL='https://hossea123456789-design.github.io/WORSHIP-SCHEDULE/';
 const KAKAO_JAVASCRIPT_KEY='c14b7dd534f10ac1fc266ba52c9e7a56';
 const STORAGE_PREFIX='worship_fast_v3_';
-const APP_VERSION='v3.20.0';
+const APP_VERSION='v3.20.1';
 const BOOTSTRAP_TIMEOUT_MS=25000;
 const MUTATE_TIMEOUT_MS=25000;
 
@@ -164,6 +169,7 @@ let auxiliaryRefreshPromise=null;
 let auxiliaryRefreshInFlight=false;
 let auxiliaryVerifiedAt=0;
 let globalProcessSettleTimer=null;
+let processDockTimer=null;
 
 function safeGet(k){try{return localStorage.getItem(STORAGE_PREFIX+k)}catch(e){return null}}
 function safeSet(k,v){try{localStorage.setItem(STORAGE_PREFIX+k,v)}catch(e){}}
@@ -341,6 +347,73 @@ function logEvent(level,event,detail){
   writeLogs(a);
   updateLogMeta();
 }
+function processDockTarget_(){
+  const today=document.getElementById('todayPill');
+  if(!today)return null;
+  const r=today.getBoundingClientRect();
+  if(!r.width||!r.height)return null;
+  return {
+    x:r.left+r.width/2,
+    y:Math.max(6,r.top-4)
+  };
+}
+
+function dockProcessStatus_(){
+  clearTimeout(processDockTimer);
+  processDockTimer=null;
+  const el=document.getElementById('processStatus');
+  const dot=el&&el.querySelector('.dot');
+  const target=processDockTarget_();
+  if(!el||!dot||!target)return;
+
+  const d=dot.getBoundingClientRect();
+  const currentX=d.left+d.width/2;
+  const currentY=d.top+d.height/2;
+  const prevDx=parseFloat(el.style.getPropertyValue('--process-dock-dx'))||0;
+  const prevDy=parseFloat(el.style.getPropertyValue('--process-dock-dy'))||0;
+
+  el.style.setProperty('--process-dock-dx',(prevDx+(target.x-currentX))+'px');
+  el.style.setProperty('--process-dock-dy',(prevDy+(target.y-currentY))+'px');
+  el.classList.add('statusDocked');
+}
+
+function undockProcessStatus_(){
+  clearTimeout(processDockTimer);
+  processDockTimer=null;
+  const el=document.getElementById('processStatus');
+  if(!el)return;
+  el.classList.remove('statusDocked');
+  el.style.setProperty('--process-dock-dx','0px');
+  el.style.setProperty('--process-dock-dy','0px');
+}
+
+function scheduleProcessDock_(){
+  clearTimeout(processDockTimer);
+  processDockTimer=setTimeout(()=>{
+    processDockTimer=null;
+    if(globalOperationBusy_())return;
+    if(processStatus!=='연결 완료')return;
+    dockProcessStatus_();
+  },420);
+}
+
+function refreshProcessDockTarget_(){
+  const el=document.getElementById('processStatus');
+  if(!el||!el.classList.contains('statusDocked'))return;
+  const dot=el.querySelector('.dot');
+  const target=processDockTarget_();
+  if(!dot||!target)return;
+  const d=dot.getBoundingClientRect();
+  const currentX=d.left+d.width/2;
+  const currentY=d.top+d.height/2;
+  const dx=parseFloat(el.style.getPropertyValue('--process-dock-dx'))||0;
+  const dy=parseFloat(el.style.getPropertyValue('--process-dock-dy'))||0;
+  el.style.setProperty('--process-dock-dx',(dx+(target.x-currentX))+'px');
+  el.style.setProperty('--process-dock-dy',(dy+(target.y-currentY))+'px');
+}
+
+window.addEventListener('resize',()=>setTimeout(refreshProcessDockTarget_,40),{passive:true});
+
 function setProcess(text,type='ok',detail='',progress=null){
   processStatus=text;
   const el=document.getElementById('processStatus');
@@ -348,15 +421,26 @@ function setProcess(text,type='ok',detail='',progress=null){
   const pct=document.getElementById('processStatusPct');
   const bar=document.getElementById('processStatusBar');
   const detailEl=document.getElementById('processStatusDetail');
+
+  const detailText=String(detail||'').trim();
+  const shouldDock=type==='ok'&&String(text||'').trim()==='연결 완료'&&!detailText;
+
+  if(!shouldDock)undockProcessStatus_();
+
   if(el&&txt){
     const hasProgress=progress!==null&&progress!==undefined&&Number.isFinite(Number(progress));
-    const hasDetail=!!String(detail||'').trim();
-    el.className='processStatus '+type+(hasProgress?' hasProgress':'')+(hasDetail?' hasDetail':'');
+    const hasDetail=!!detailText;
+    const docked=shouldDock&&el.classList.contains('statusDocked');
+    el.className='processStatus '+type+(hasProgress?' hasProgress':'')+(hasDetail?' hasDetail':'')+(docked?' statusDocked':'');
     txt.textContent=text;
     if(pct)pct.textContent=hasProgress?Math.max(0,Math.min(100,Math.round(Number(progress))))+'%':'';
     if(bar)bar.style.width=hasProgress?Math.max(0,Math.min(100,Number(progress)))+'%':'0%';
-    if(detailEl)detailEl.textContent=hasDetail?String(detail):'';
+    if(detailEl)detailEl.textContent=hasDetail?detailText:'';
   }
+
+  if(shouldDock)scheduleProcessDock_();
+  else clearTimeout(processDockTimer);
+
   if(detail&&(type==='error'||type==='offline'))logEvent(type==='error'?'ERROR':'INFO','STATUS',text+' | '+detail);
 }
 function showConnectionError(message){
@@ -1022,11 +1106,14 @@ function scheduleGlobalProcessSettle_(delay=1200,detail=''){
   globalProcessSettleTimer=setTimeout(()=>{
     globalProcessSettleTimer=null;
     if(globalOperationBusy_())return;
-    setProcess(
-      '연결 완료',
-      'ok',
-      detail||'일정·악보·찬양 링크 확인이 완료되었습니다.'
-    );
+    if(detail){
+      setProcess('연결 완료','ok',detail);
+      setTimeout(()=>{
+        if(!globalOperationBusy_()&&processStatus==='연결 완료')setProcess('연결 완료','ok');
+      },520);
+    }else{
+      setProcess('연결 완료','ok');
+    }
   },Math.max(0,Number(delay)||0));
 }
 
