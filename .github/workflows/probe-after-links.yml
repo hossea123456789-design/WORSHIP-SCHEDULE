@@ -7,19 +7,9 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Test persistence round trip
+      - name: Read live score API only
         shell: bash
         run: |
-          set -euo pipefail
           BASE='https://script.google.com/macros/s/AKfycbxYuJAJp0BkCk_aXRhgJEf-P8aOPAnWBk2Ea2WhmkQa7NHHLVB_kVdmsfBdomF9nrQcUA/exec'
-          TEST='https://www.youtube.com/watch?v=dQw4w9WgXcQ'
-          echo '=== before ==='
-          curl -L --max-time 40 -sS "$BASE?action=afterLinks&callback=cb"; echo
-          echo '=== set ==='
-          curl -L --max-time 40 -sS -X POST             --data-urlencode 'app=worship-score'             --data-urlencode 'action=afterLinksSet'             --data-urlencode 'requestId=probe_after_links'             --data-urlencode "linksJson=[\"$TEST\"]"             "$BASE"; echo
-          echo '=== after set ==='
-          curl -L --max-time 40 -sS "$BASE?action=afterLinks&callback=cb"; echo
-          echo '=== clear ==='
-          curl -L --max-time 40 -sS -X POST             --data-urlencode 'app=worship-score'             --data-urlencode 'action=afterLinksSet'             --data-urlencode 'requestId=probe_after_links_clear'             --data-urlencode 'linksJson=[]'             "$BASE"; echo
-          echo '=== after clear ==='
+          echo '=== afterLinks readonly ==='
           curl -L --max-time 40 -sS "$BASE?action=afterLinks&callback=cb"; echo
