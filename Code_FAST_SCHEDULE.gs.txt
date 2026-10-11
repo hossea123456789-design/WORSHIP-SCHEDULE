@@ -1,5 +1,5 @@
 /**
- * WORSHIP-SCHEDULE standalone Apps Script backend - optimized schedule-only v3.17.0
+ * WORSHIP-SCHEDULE standalone Apps Script backend - optimized schedule-only v3.18.0
  * - Maple DB와 완전히 분리된 찬양팀 전용 프로젝트용
  * - GET: bootstrap / revision / mutate(JSONP)
  * - 일정 전용: Drive/악보 업로드 코드 없음
@@ -9,15 +9,17 @@
 const WORSHIP_API = Object.freeze({
   TZ: 'Asia/Seoul',
   DB_PROP: 'WORSHIP_SPREADSHEET_ID',
-  CACHE_KEY: 'WORSHIP_BOOTSTRAP_V36',
+  CACHE_KEY: 'WORSHIP_BOOTSTRAP_V37',
   CACHE_SECONDS: 21600,
   REV_CACHE_KEY: 'WORSHIP_REVISION_V2',
   REV_CACHE_SECONDS: 21600,
-  SNAPSHOT_PREFIX: 'WORSHIP_SNAPSHOT_V1_',
-  SNAPSHOT_COUNT_PROP: 'WORSHIP_SNAPSHOT_V1_COUNT',
-  SNAPSHOT_REV_PROP: 'WORSHIP_SNAPSHOT_V1_REV',
+  SNAPSHOT_PREFIX: 'WORSHIP_SNAPSHOT_V2_',
+  SNAPSHOT_COUNT_PROP: 'WORSHIP_SNAPSHOT_V2_COUNT',
+  SNAPSHOT_REV_PROP: 'WORSHIP_SNAPSHOT_V2_REV',
   SNAPSHOT_CHUNK_SIZE: 2500,
   LOG_KEEP: 1500,
+  HONORIFIC_FEATURE_VERSION: 1,
+  DEFAULT_HONORIFICS: Object.freeze(['집사님','목사님','사모님','권사님','장로님','형제님','자매님']),
   SHEETS: Object.freeze({
     CONFIG: 'CONFIG',
     ROLES: 'ROLES',
@@ -118,21 +120,168 @@ function worshipOutput_(data, callback) {
   return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
 }
 
+function worshipNormalizeHonorificOptions_(values) {
+  const source = Array.isArray(values) ? values : [];
+  const out = [];
+  const seen = {};
+  source.forEach(v => {
+    const title = String(v == null ? '' : v).trim().slice(0, 20);
+    if (!title || seen[title]) return;
+    seen[title] = true;
+    out.push(title);
+  });
+  return out.slice(0, 30);
+}
+
+function worshipParseHonorificOptionsFromConfig_(config) {
+  const raw = String((config && config.HONORIFIC_OPTIONS_JSON) || '');
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      const normalized = worshipNormalizeHonorificOptions_(parsed);
+      if (normalized.length) return normalized;
+    } catch (_) {}
+  }
+  return WORSHIP_API.DEFAULT_HONORIFICS.slice();
+}
+
+function worshipParseMemberHonorificsFromConfig_(config) {
+  const raw = String((config && config.MEMBER_HONORIFICS_JSON) || '');
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const out = {};
+    Object.keys(parsed).forEach(id => {
+      const title = String(parsed[id] == null ? '' : parsed[id]).trim().slice(0, 20);
+      if (title) out[String(id)] = title;
+    });
+    return out;
+  } catch (_) {
+    return {};
+  }
+}
+
+function worshipDefaultHonorificForName_(name, options) {
+  const list = Array.isArray(options) && options.length ? options : WORSHIP_API.DEFAULT_HONORIFICS.slice();
+  const n = String(name || '').trim();
+  if (n === '박혜원' && list.indexOf('사모님') >= 0) return '사모님';
+  if (list.indexOf('집사님') >= 0) return '집사님';
+  return list[0] || '';
+}
+
+function worshipEffectiveHonorific_(member, map, options) {
+  const id = String((member && member.member_id) || '');
+  const explicit = id ? String((map && map[id]) || '').trim() : '';
+  if (explicit && options.indexOf(explicit) >= 0) return explicit;
+  return worshipDefaultHonorificForName_((member && member.member_name) || '', options);
+}
+
+function worshipConfigObject_(ss) {
+  const rows = worshipReadTable_(ss, WORSHIP_API.SHEETS.CONFIG).objects;
+  const config = {};
+  rows.forEach(r => {
+    config[String(r.key || '')] = String(r.value == null ? '' : r.value);
+  });
+  return config;
+}
+
+function worshipSetConfigValue_(ss, key, value, description) {
+  const table = worshipReadTable_(ss, WORSHIP_API.SHEETS.CONFIG);
+  const k = String(key || '').trim();
+  if (!k) throw new Error('CONFIG key가 없습니다.');
+  let row = table.objects.find(r => String(r.key || '') === k);
+  if (!row) {
+    row = { key: k, value: String(value == null ? '' : value), description: String(description || '') };
+    table.objects.push(row);
+  } else {
+    row.value = String(value == null ? '' : value);
+    if (description != null) row.description = String(description);
+  }
+  table.dirty = true;
+  worshipWriteTable_(table);
+}
+
+function worshipHonorificState_(ss, members) {
+  const config = worshipConfigObject_(ss);
+  const options = worshipParseHonorificOptionsFromConfig_(config);
+  const rawMap = worshipParseMemberHonorificsFromConfig_(config);
+  const resolved = {};
+  (Array.isArray(members) ? members : []).forEach(member => {
+    const id = String(member.member_id || '');
+    if (!id) return;
+    resolved[id] = worshipEffectiveHonorific_(member, rawMap, options);
+  });
+  return { config, options, rawMap, resolved };
+}
+
+function worshipSaveHonorificOptions_(ss, p, now) {
+  const requested = worshipNormalizeHonorificOptions_(p && p.options);
+  if (!requested.length) throw new Error('호칭은 최소 1개 이상 필요합니다.');
+
+  const members = worshipReadTable_(ss, WORSHIP_API.SHEETS.MEMBERS).objects
+    .filter(r => worshipTruthy_(r.active));
+  const current = worshipHonorificState_(ss, members);
+  const removedInUse = {};
+
+  members.forEach(member => {
+    const title = worshipEffectiveHonorific_(member, current.rawMap, current.options);
+    if (title && requested.indexOf(title) < 0) {
+      if (!removedInUse[title]) removedInUse[title] = [];
+      removedInUse[title].push(String(member.member_name || ''));
+    }
+  });
+
+  const blocked = Object.keys(removedInUse);
+  if (blocked.length) {
+    const detail = blocked.map(title => title + ': ' + removedInUse[title].filter(Boolean).join(', ')).join(' / ');
+    throw new Error('사용 중인 호칭은 삭제할 수 없습니다. 먼저 해당 멤버의 호칭을 변경해주세요. (' + detail + ')');
+  }
+
+  worshipSetConfigValue_(
+    ss,
+    'HONORIFIC_OPTIONS_JSON',
+    JSON.stringify(requested),
+    '멤버 호칭 선택 목록'
+  );
+  worshipSetConfigValue_(
+    ss,
+    'HONORIFIC_FEATURE_VERSION',
+    String(WORSHIP_API.HONORIFIC_FEATURE_VERSION),
+    '호칭 기능 버전'
+  );
+  return true;
+}
+
 function worshipBuildBootstrapData_(ss) {
   const configRows = worshipReadTable_(ss, WORSHIP_API.SHEETS.CONFIG).objects;
   const config = {};
   configRows.forEach(r => { config[String(r.key || '')] = String(r.value == null ? '' : r.value); });
 
+  const members = worshipReadTable_(ss, WORSHIP_API.SHEETS.MEMBERS).objects
+    .filter(r => worshipTruthy_(r.active))
+    .sort((a,b)=>worshipNum_(a.display_order)-worshipNum_(b.display_order));
+
+  const honorificOptions = worshipParseHonorificOptionsFromConfig_(config);
+  const rawHonorificMap = worshipParseMemberHonorificsFromConfig_(config);
+  const memberHonorifics = {};
+  members.forEach(member => {
+    const id = String(member.member_id || '');
+    if (id) memberHonorifics[id] = worshipEffectiveHonorific_(member, rawHonorificMap, honorificOptions);
+  });
+
   return {
+    schemaVersion: 2,
     revision: Number(config.STATE_REVISION || 1),
     serverToday: Utilities.formatDate(new Date(), WORSHIP_API.TZ, 'yyyy-MM-dd'),
     config,
+    honorificFeatureVersion: WORSHIP_API.HONORIFIC_FEATURE_VERSION,
+    honorificOptions,
+    memberHonorifics,
     roles: worshipReadTable_(ss, WORSHIP_API.SHEETS.ROLES).objects
       .filter(r => worshipTruthy_(r.active))
       .sort((a,b)=>worshipNum_(a.display_order)-worshipNum_(b.display_order)),
-    members: worshipReadTable_(ss, WORSHIP_API.SHEETS.MEMBERS).objects
-      .filter(r => worshipTruthy_(r.active))
-      .sort((a,b)=>worshipNum_(a.display_order)-worshipNum_(b.display_order)),
+    members,
     memberRoles: worshipReadTable_(ss, WORSHIP_API.SHEETS.MEMBER_ROLES).objects
       .filter(r => worshipTruthy_(r.active)),
     events: worshipReadTable_(ss, WORSHIP_API.SHEETS.EVENTS).objects,
@@ -651,6 +800,7 @@ function worshipMutate_(mutation) {
       case 'eventSet': worshipSetEvent_(ss,payload,now); break;
       case 'memberSave': structural=worshipSaveMember_(ss,payload,now); break;
       case 'memberDelete': structural=true; worshipDeleteMember_(ss,payload,now); break;
+      case 'honorificOptionsSet': structural=true; worshipSaveHonorificOptions_(ss,payload,now); break;
       case 'roleSave': structural=worshipSaveRole_(ss,payload,now); break;
       case 'roleDelete': structural=true; worshipDeleteRole_(ss,payload,now); break;
       case 'prayerOrderSet': structural=true; worshipSetPrayerOrder_(ss,payload,now); break;
@@ -696,24 +846,115 @@ function worshipSetEvent_(ss,p,now) {
 }
 
 function worshipSaveMember_(ss,p,now) {
-  const table=worshipReadTable_(ss,WORSHIP_API.SHEETS.MEMBERS), mr=worshipReadTable_(ss,WORSHIP_API.SHEETS.MEMBER_ROLES), name=String(p.name||'').trim();
+  const table=worshipReadTable_(ss,WORSHIP_API.SHEETS.MEMBERS);
+  const mr=worshipReadTable_(ss,WORSHIP_API.SHEETS.MEMBER_ROLES);
+  const name=String(p.name||'').trim();
   if(!name) throw new Error('멤버 이름을 입력해주세요.');
-  const isNew=!String(p.memberId||''), memberId=isNew?worshipId_('m'):String(p.memberId); let row=table.objects.find(r=>String(r.member_id)===memberId);
-  if(!row){const max=table.objects.reduce((m,r)=>Math.max(m,worshipNum_(r.display_order)),0);row={member_id:memberId,member_name:name,display_order:max+1,active:true,updated_at:now};table.objects.push(row);} else {row.member_name=name;row.active=true;row.updated_at=now;}
+
+  const isNew=!String(p.memberId||'');
+  const memberId=isNew?worshipId_('m'):String(p.memberId);
+  let row=table.objects.find(r=>String(r.member_id)===memberId);
+
+  if(!row){
+    const max=table.objects.reduce((m,r)=>Math.max(m,worshipNum_(r.display_order)),0);
+    row={member_id:memberId,member_name:name,display_order:max+1,active:true,updated_at:now};
+    table.objects.push(row);
+  }else{
+    row.member_name=name;
+    row.active=true;
+    row.updated_at=now;
+  }
   table.dirty=true;
-  mr.objects.forEach(r=>{if(String(r.member_id)===memberId&&worshipTruthy_(r.active)){r.active=false;r.updated_at=now;mr.dirty=true;}});
+
+  mr.objects.forEach(r=>{
+    if(String(r.member_id)===memberId&&worshipTruthy_(r.active)){
+      r.active=false;
+      r.updated_at=now;
+      mr.dirty=true;
+    }
+  });
   const roleIds=Array.isArray(p.roleIds)?[...new Set(p.roleIds.map(String).filter(Boolean))]:[];
-  roleIds.forEach(roleId=>{let link=mr.objects.find(r=>String(r.member_id)===memberId&&String(r.role_id)===roleId);if(!link){link={member_id:memberId,role_id:roleId,active:true,updated_at:now};mr.objects.push(link);}else{link.active=true;link.updated_at=now;}mr.dirty=true;});
-  worshipWriteTable_(table); worshipWriteTable_(mr); return isNew;
+  roleIds.forEach(roleId=>{
+    let link=mr.objects.find(r=>String(r.member_id)===memberId&&String(r.role_id)===roleId);
+    if(!link){
+      link={member_id:memberId,role_id:roleId,active:true,updated_at:now};
+      mr.objects.push(link);
+    }else{
+      link.active=true;
+      link.updated_at=now;
+    }
+    mr.dirty=true;
+  });
+
+  worshipWriteTable_(table);
+  worshipWriteTable_(mr);
+
+  const activeMembers=table.objects.filter(r=>worshipTruthy_(r.active));
+  const honorificState=worshipHonorificState_(ss,activeMembers);
+  const map=honorificState.rawMap;
+  const hasHonorific=Object.prototype.hasOwnProperty.call(p||{},'honorific');
+  let honorific=hasHonorific?String(p.honorific||'').trim():'';
+
+  if(hasHonorific&&honorificState.options.indexOf(honorific)<0){
+    throw new Error('선택한 호칭이 현재 호칭 목록에 없습니다.');
+  }
+  if(!honorific){
+    const previous=String(map[memberId]||'').trim();
+    honorific=previous&&honorificState.options.indexOf(previous)>=0
+      ?previous
+      :worshipDefaultHonorificForName_(name,honorificState.options);
+  }
+
+  map[memberId]=honorific;
+  worshipSetConfigValue_(ss,'MEMBER_HONORIFICS_JSON',JSON.stringify(map),'멤버별 호칭');
+  worshipSetConfigValue_(ss,'HONORIFIC_FEATURE_VERSION',String(WORSHIP_API.HONORIFIC_FEATURE_VERSION),'호칭 기능 버전');
+  return isNew;
 }
 
 function worshipDeleteMember_(ss,p,now) {
-  const id=String(p.memberId||''); if(!id) throw new Error('삭제할 멤버 ID가 없습니다.');
-  const table=worshipReadTable_(ss,WORSHIP_API.SHEETS.MEMBERS), row=table.objects.find(r=>String(r.member_id)===id);
-  if(row){row.active=false;row.updated_at=now;table.dirty=true;worshipWriteTable_(table);}
-  const mr=worshipReadTable_(ss,WORSHIP_API.SHEETS.MEMBER_ROLES); mr.objects.forEach(r=>{if(String(r.member_id)===id&&worshipTruthy_(r.active)){r.active=false;r.updated_at=now;mr.dirty=true;}}); if(mr.dirty) worshipWriteTable_(mr);
-  const prayer=worshipReadTable_(ss,WORSHIP_API.SHEETS.PRAYER_ORDER), before=prayer.objects.filter(r=>worshipTruthy_(r.active)), active=before.filter(r=>String(r.member_id)!==id);
-  if(active.length!==before.length){prayer.objects=active.map((r,i)=>({position:i+1,member_id:String(r.member_id||''),display_name:String(r.display_name||''),active:true,updated_at:now}));prayer.dirty=true;worshipWriteTable_(prayer);}
+  const id=String(p.memberId||'');
+  if(!id) throw new Error('삭제할 멤버 ID가 없습니다.');
+
+  const table=worshipReadTable_(ss,WORSHIP_API.SHEETS.MEMBERS);
+  const row=table.objects.find(r=>String(r.member_id)===id);
+  if(row){
+    row.active=false;
+    row.updated_at=now;
+    table.dirty=true;
+    worshipWriteTable_(table);
+  }
+
+  const mr=worshipReadTable_(ss,WORSHIP_API.SHEETS.MEMBER_ROLES);
+  mr.objects.forEach(r=>{
+    if(String(r.member_id)===id&&worshipTruthy_(r.active)){
+      r.active=false;
+      r.updated_at=now;
+      mr.dirty=true;
+    }
+  });
+  if(mr.dirty) worshipWriteTable_(mr);
+
+  const prayer=worshipReadTable_(ss,WORSHIP_API.SHEETS.PRAYER_ORDER);
+  const before=prayer.objects.filter(r=>worshipTruthy_(r.active));
+  const active=before.filter(r=>String(r.member_id)!==id);
+  if(active.length!==before.length){
+    prayer.objects=active.map((r,i)=>({
+      position:i+1,
+      member_id:String(r.member_id||''),
+      display_name:String(r.display_name||''),
+      active:true,
+      updated_at:now
+    }));
+    prayer.dirty=true;
+    worshipWriteTable_(prayer);
+  }
+
+  const config=worshipConfigObject_(ss);
+  const map=worshipParseMemberHonorificsFromConfig_(config);
+  if(Object.prototype.hasOwnProperty.call(map,id)){
+    delete map[id];
+    worshipSetConfigValue_(ss,'MEMBER_HONORIFICS_JSON',JSON.stringify(map),'멤버별 호칭');
+  }
 }
 
 function worshipSaveRole_(ss,p,now) {
@@ -864,7 +1105,8 @@ function setupWorshipStandalone() {
   return [
     '일정 백엔드 연결/권한 확인 완료: ' + ss.getName(),
     'revision: ' + data.revision,
-    '빠른 스냅샷 캐시: 준비 완료'
+    '빠른 스냅샷 캐시: 준비 완료',
+    '호칭 기능: v' + WORSHIP_API.HONORIFIC_FEATURE_VERSION
   ].join('\n');
 }
 
