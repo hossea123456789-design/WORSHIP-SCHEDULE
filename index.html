@@ -88,7 +88,7 @@ main{padding:15px 15px 36px}.panel{display:none}.panel.active{display:block}.sec
 
 const PLAYLIST_ID='PLDThR_8ShZAFTVEZgp2jtZaha8bThHZXB';
 const STORAGE_PREFIX='worship_fast_v3_';
-const APP_VERSION='v3.17.3';
+const APP_VERSION='v3.17.4';
 const BOOTSTRAP_TIMEOUT_MS=25000;
 const MUTATE_TIMEOUT_MS=25000;
 
@@ -379,7 +379,7 @@ function worshipIframePost(action,params={},timeout=15000,options={}){
 
 function waitMs_(ms){return new Promise(resolve=>setTimeout(resolve,ms))}
 
-async function readApi(action,params={},timeout=7000,options={}){
+async function readApi(action,params={},timeout=12000,options={}){
   const attempts=Math.max(1,Math.min(2,Number(options.attempts||2)));
   const hedgeDelay=Math.max(800,Number(options.hedgeDelay||(action==='revision'?2000:2800)));
   const started=performance.now();
@@ -447,7 +447,7 @@ async function readApi(action,params={},timeout=7000,options={}){
 
 async function jsonp(action,params={},timeout=15000,options={}){
   const readOnly=action==='bootstrap'||action==='revision';
-  if(readOnly)return readApi(action,params,Math.min(timeout,action==='revision'?5500:8000),options);
+  if(readOnly)return readApi(action,params,Math.min(timeout,action==='revision'?12000:15000),options);
 
   try{
     return await jsonpScript(action,params,timeout,options);
@@ -535,30 +535,89 @@ function horizonEndKey(){return monthKey(horizonEndMonth())}
 function isBeyondHorizon(mk){return monthNum(mk)>monthNum(horizonEndKey())}
 
 let syncProgressTimer=null;
-function stopSyncProgress(){if(syncProgressTimer){clearInterval(syncProgressTimer);syncProgressTimer=null}}
+let syncProgressHideTimer=null;
+let syncProgressCurrent=0;
+let syncProgressTarget=0;
+let syncProgressLabel='';
+let syncProgressDetail='';
+let syncProgressCached=true;
+let syncProgressFinalLabel='최신 상태 확인 완료';
+let syncProgressFinalDetail='서버와 현재 화면의 데이터가 일치합니다.';
+
+function stopSyncProgress(reset=false){
+  if(syncProgressTimer){clearInterval(syncProgressTimer);syncProgressTimer=null}
+  if(syncProgressHideTimer){clearTimeout(syncProgressHideTimer);syncProgressHideTimer=null}
+  if(reset){
+    syncProgressCurrent=0;
+    syncProgressTarget=0;
+    syncProgressLabel='';
+    syncProgressDetail='';
+  }
+}
+function renderSyncProgress_(){
+  const prefix=syncProgressCached?'캐시 표시 · ':'';
+  const fallbackDetail=syncProgressCached
+    ?'현재 화면은 캐시로 사용할 수 있으며 서버의 최신 상태를 확인하고 있습니다.'
+    :'서버에서 최신 찬양팀 데이터를 불러오고 있습니다.';
+  const done=syncProgressCurrent>=100;
+  setProcess(
+    `${prefix}${done?syncProgressFinalLabel:syncProgressLabel}`,
+    done?'ok':'working',
+    done?syncProgressFinalDetail:(syncProgressDetail||fallbackDetail),
+    syncProgressCurrent
+  );
+}
+function ensureSyncProgressTimer_(){
+  if(syncProgressTimer)return;
+  syncProgressTimer=setInterval(()=>{
+    if(syncProgressCurrent<syncProgressTarget){
+      const gap=syncProgressTarget-syncProgressCurrent;
+      const step=gap>14?2:1;
+      syncProgressCurrent=Math.min(syncProgressTarget,syncProgressCurrent+step);
+      renderSyncProgress_();
+    }
+    if(syncProgressCurrent>=100){
+      clearInterval(syncProgressTimer);
+      syncProgressTimer=null;
+      syncProgressHideTimer=setTimeout(()=>{
+        if(!readInFlight&&!flushing&&!pending.length&&serverFresh){
+          setProcess('연결 완료','ok');
+          syncProgressCurrent=0;
+          syncProgressTarget=0;
+        }
+      },750);
+    }
+  },320);
+}
 function setSyncProgress(pct,label,cached=!!STATE,detail=''){
   const p=Math.max(0,Math.min(100,Math.round(Number(pct)||0)));
-  const prefix=cached?'캐시 표시 · ':'';
-  const fallbackDetail=cached
-    ?'화면은 캐시로 바로 보여주고, 서버의 최신 변경 여부를 확인하고 있습니다.'
-    :'서버에서 최신 찬양팀 데이터를 불러오고 있습니다.';
-  setProcess(`${prefix}${label}`,p>=100?'ok':'working',detail||fallbackDetail,p);
+  syncProgressCached=!!cached;
+  if(p>=100){
+    syncProgressFinalLabel=label||'최신 상태 확인 완료';
+    syncProgressFinalDetail=detail||'서버와 현재 화면의 데이터가 일치합니다.';
+    syncProgressLabel='연결 확인 마무리 중';
+    syncProgressDetail='서버 응답을 확인했습니다. 최신 상태 반영을 마무리하고 있습니다.';
+  }else{
+    syncProgressLabel=label||'서버 최신 상태 확인 중';
+    syncProgressDetail=detail||'서버 응답을 기다리고 있습니다.';
+  }
+  if(syncProgressCurrent<=0)syncProgressCurrent=Math.min(p,Math.max(1,cached?8:4));
+  syncProgressTarget=Math.max(syncProgressCurrent,p);
+  renderSyncProgress_();
+  ensureSyncProgressTimer_();
 }
 function startSyncProgress(cached=!!STATE,startPct=null){
-  stopSyncProgress();
-  const started=performance.now();
-  const initial=startPct==null?(cached?12:6):startPct;
-  setSyncProgress(initial,cached?'서버 최신 버전 확인':'서버 연결 준비',cached);
-  syncProgressTimer=setInterval(()=>{
-    const sec=(performance.now()-started)/1000;
-    let pct,label,detail;
-    if(sec<1){pct=Math.max(initial,20);label='요청 전송 완료';detail='Apps Script에 최신 상태를 요청했습니다.'}
-    else if(sec<2){pct=Math.max(initial,34+sec*6);label='서버 응답 대기';detail='첫 번째 빠른 확인 요청의 응답을 기다리고 있습니다.'}
-    else if(sec<5){pct=Math.max(initial,50+(sec-2)*7);label='백업 요청 병행';detail='첫 요청이 늦어 두 번째 요청도 동시에 보내 먼저 도착하는 응답을 사용합니다.'}
-    else if(sec<8){pct=Math.max(initial,71+(sec-5)*4);label='일정 데이터 확인';detail='두 요청 중 정상 응답을 기다리고 있습니다.'}
-    else{pct=Math.max(initial,Math.min(84,72+(sec-7)*1.5));label='서버 처리 완료 대기';detail='응답이 늦어지고 있지만 현재 화면은 캐시로 계속 사용할 수 있습니다.'}
-    setSyncProgress(pct,label,cached,detail);
-  },500);
+  stopSyncProgress(true);
+  const initial=Math.max(1,Math.min(90,Math.round(startPct==null?(cached?8:4):startPct)));
+  syncProgressCurrent=initial;
+  syncProgressTarget=cached?78:82;
+  syncProgressCached=!!cached;
+  syncProgressLabel=cached?'서버 최신 상태 확인 중':'서버 연결 중';
+  syncProgressDetail=cached
+    ?'현재 화면은 바로 사용할 수 있습니다. 서버의 최신 변경 여부를 확인하고 있습니다.'
+    :'서버에서 최신 찬양팀 데이터를 불러오고 있습니다.';
+  renderSyncProgress_();
+  ensureSyncProgressTimer_();
 }
 
 function reconnectDelayMs_(){
@@ -570,11 +629,13 @@ function scheduleReconnect_(reason=''){
   const delay=reconnectDelayMs_();
   logEvent('INFO','RECONNECT_SCHEDULE',`delay=${delay}ms reason=${reason}`);
   if(STATE){
-    setProcess(
-      `캐시 사용 · ${Math.round(delay/1000)}초 후 재연결`,
-      'working',
-      '현재 화면은 캐시로 사용할 수 있습니다. 저장은 최신 서버 확인 후 활성화됩니다.',
-      32
+    const target=Math.min(96,82+Math.min(readFailureStreak,5)*3);
+    const timeoutLike=String(reason||'').includes('시간이 초과');
+    setSyncProgress(
+      target,
+      timeoutLike?'서버 응답 지연 · 자동 재확인 중':'서버 연결 · 자동 재확인 중',
+      true,
+      '현재 화면은 캐시로 사용할 수 있습니다. 내부 재시도 시간은 표시하지 않고 연결 확인을 계속 진행합니다.'
     );
   }
   reconnectTimer=setTimeout(()=>{
@@ -588,10 +649,7 @@ function markReadFailure_(e){
   serverFresh=false;
   const msg=e&&e.message?e.message:String(e||'');
   logEvent('WARN','READ_DEGRADED',`streak=${readFailureStreak} msg=${msg}`);
-  if(STATE){
-    setProcess('캐시 사용 · 자동 재연결 중','working',msg);
-    scheduleReconnect_(msg);
-  }
+  if(STATE) scheduleReconnect_(msg);
 }
 
 async function bootstrap(showLoading=true,silentFailure=false){
@@ -618,7 +676,7 @@ async function bootstrap(showLoading=true,silentFailure=false){
     const res=await jsonp('bootstrap',{},BOOTSTRAP_TIMEOUT_MS,{background:silentFailure});
     if(!res||!res.ok)throw new Error((res&&res.error)||'초기 데이터를 불러오지 못했습니다.');
 
-    if(!silentFailure)setSyncProgress(88,'최신 데이터 수신',hadState,'서버에서 최신 데이터 묶음을 받았습니다.');
+    if(!silentFailure)setSyncProgress(92,'최신 데이터 적용 중',hadState,'서버 응답을 받았습니다. 최신 데이터를 화면에 적용하고 있습니다.');
     STATE=res.data;
     readFailureStreak=0;
     hardConnectionDown=false;
@@ -628,20 +686,18 @@ async function bootstrap(showLoading=true,silentFailure=false){
     reconnectTimer=null;
     migrateLegacyEventQueue_();
     pending.forEach(applyOptimistic);
-    if(!silentFailure)setSyncProgress(94,'기기 캐시 갱신',hadState,'다음 실행을 빠르게 하기 위해 최신 데이터를 기기에 저장하고 있습니다.');
+    if(!silentFailure)setSyncProgress(96,'최신 데이터 적용 중',hadState,'최신 데이터를 기기에 저장하고 화면 반영을 준비하고 있습니다.');
     cacheState();
     needsFullRefresh=false;
 
     const today=new Date(currentTodayKey()+'T00:00:00');
     if(!viewMonth)viewMonth=new Date(today.getFullYear(),today.getMonth(),1);
 
-    if(!silentFailure)setSyncProgress(98,'화면 반영',hadState,'월별 편성·기도·설정 화면에 최신 데이터를 적용하고 있습니다.');
+    if(!silentFailure)setSyncProgress(98,'화면 반영 중',hadState,'월별 편성·기도·설정 화면에 최신 데이터를 적용하고 있습니다.');
     renderAll();
     clearConnectionError();
     if(!silentFailure){
-      stopSyncProgress();
       setSyncProgress(100,'최신 상태 확인 완료',false,'서버와 현재 화면의 데이터가 일치합니다.');
-      setTimeout(()=>{if(!readInFlight&&!flushing&&!pending.length)setProcess('연결 완료','ok')},900);
     }else if(['동기화 중…','연결 중…','오프라인','동기화 실패 · 캐시 사용'].includes(processStatus)){
       setProcess('연결 완료','ok');
     }
@@ -660,7 +716,7 @@ async function bootstrap(showLoading=true,silentFailure=false){
     showApiError(e&&e.message?e.message:String(e));
     return false;
   }finally{
-    if(!silentFailure&&readInFlight&&processStatus.includes('동기화'))stopSyncProgress();
+    if(!silentFailure&&!STATE&&hardConnectionDown)stopSyncProgress();
     readInFlight=false;
     if(pending.length&&!flushing&&!hardConnectionDown){
       clearTimeout(retryTimer);
@@ -1649,7 +1705,7 @@ async function loadScoreMeta(silent=true){
   scoreMetaError='';
   renderScore();
   try{
-    const res=await scoreJsonp('meta',15000);
+    const res=await scoreJsonp('meta',30000);
     if(!res||res.ok!==true)throw new Error((res&&res.error)||'악보 정보를 불러오지 못했습니다.');
     SCORE_META=res.file||null;
     scoreMetaState='loaded';
@@ -2279,13 +2335,18 @@ async function pollRevision(force=false){
   let recovered=false;
   const showProgress=force&&!flushing&&!dateSaveBusy&&!monthSaveBusy;
   if(showProgress){
-    stopSyncProgress();
-    setSyncProgress(22,'서버 최신 버전 확인',true,'현재 캐시와 서버 revision을 비교하고 있습니다.');
+    if(syncProgressCurrent<=0)startSyncProgress(true,12);
+    setSyncProgress(
+      Math.min(94,78+Math.min(readFailureStreak,4)*3),
+      hardConnectionDown?'서버 연결 다시 확인 중':'서버 최신 상태 확인 중',
+      true,
+      '현재 캐시와 서버의 최신 상태를 비교하고 있습니다.'
+    );
   }
 
   try{
     const wasDegraded=hardConnectionDown||readFailureStreak>0;
-    const r=await readApi('revision',{},5500,{
+    const r=await readApi('revision',{},12000,{
       background:true,
       attempts:2,
       hedgeDelay:force?1800:2400
@@ -2311,7 +2372,7 @@ async function pollRevision(force=false){
           const blocked=stashPendingConflict_('remote_revision_'+r.revision);
           showToast(`서버의 최신 변경 감지 · 오래된 저장 ${blocked}건 자동 실행 차단`);
         }
-        if(showProgress)setSyncProgress(46,'새 변경사항 발견',true,`서버 revision ${r.revision}을 확인했습니다. 최신 데이터를 불러옵니다.`);
+        if(showProgress)setSyncProgress(84,'새 변경사항 확인 · 최신화 중',true,`서버 revision ${r.revision}을 확인했습니다. 최신 데이터를 불러오고 있습니다.`);
       }else{
         serverFresh=true;
         renderAll();
@@ -2319,7 +2380,6 @@ async function pollRevision(force=false){
         if(!pending.length&&!flushing){
           if(showProgress){
             setSyncProgress(100,'최신 상태 확인 완료',false,'서버와 현재 캐시가 동일합니다.');
-            setTimeout(()=>{if(!readInFlight&&!flushing&&!pending.length)setProcess('연결 완료','ok')},900);
           }else{
             setProcess('연결 완료','ok');
           }
@@ -2342,7 +2402,7 @@ async function pollRevision(force=false){
 
   if(refreshNeeded&&!pending.length&&!flushing){
     if(showProgress){
-      setSyncProgress(52,'최신 데이터 불러오기',true,'서버의 변경사항을 한 번에 받아오고 있습니다.');
+      setSyncProgress(90,'최신 데이터 불러오는 중',true,'서버의 변경사항을 받아와 화면에 반영하고 있습니다.');
       const ok=await bootstrap(false,false);
       if(!ok&&STATE)markReadFailure_(new Error('최신 데이터 갱신 실패'));
     }else{
@@ -2368,16 +2428,17 @@ if(hadCachedState){
 
   if(pending.length){
     hardConnectionDown=true;
-    setProcess('저장 보류 · 서버 확인 중','working','저장 대기 내용을 유지한 채 서버 연결을 확인하고 있습니다.',18);
+    startSyncProgress(true,12);
+    setSyncProgress(76,'저장 보류 · 서버 최신 상태 확인 중',true,'저장 대기 내용을 유지한 채 서버의 최신 상태를 확인하고 있습니다.');
     startupSyncTimer=setTimeout(()=>pollRevision(true),180);
   }else{
-    setProcess('캐시 표시 · 최신 여부 확인 중','working','화면은 즉시 사용할 수 있고 서버 최신 상태를 확인하고 있습니다.',12);
+    startSyncProgress(true,8);
     startupSyncTimer=setTimeout(()=>pollRevision(true),180);
   }
 }else{
   serverFresh=false;
   viewMonth=new Date(localNow.getFullYear(),localNow.getMonth(),1);
-  setProcess('서버 연결 중','working','처음 실행이라 서버에서 전체 데이터를 불러옵니다.',5);
+  startSyncProgress(false,4);
   bootstrap(false);
 }
 
