@@ -1,0 +1,31 @@
+name: Probe Worship Latency
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/probe-worship-latency.yml']
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Measure repeated latency
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import urllib.request, urllib.error, time, re
+          endpoints = [
+            ("NEW_SCHEDULE","https://script.google.com/macros/s/AKfycbzuIFCX3xFCUyD6D__z0InthKUUfLlq_RQ92eyN-BhmSsXVLH6-19Wd7lnCY9ggTDlclw/exec?app=worship&action=revision&callback=testcb",5),
+            ("OLD_SCHEDULE","https://script.google.com/macros/s/AKfycbwwYV6CBces0jCFTndl9EoKL_LU7P55TJ2eLrT1qCH0aL-XxZggaPClwz4FuZgZ3KulaQ/exec?app=worship&action=revision&callback=testcb",3),
+            ("NEW_SCORE","https://script.google.com/macros/s/AKfycbxYuJAJp0BkCk_aXRhgJEf-P8aOPAnWBk2Ea2WhmkQa7NHHLVB_kVdmsfBdomF9nrQcUA/exec?action=meta&callback=testcb",3),
+          ]
+          for name,url,count in endpoints:
+            print("====",name,"====")
+            for i in range(count):
+              t=time.time()
+              try:
+                r=urllib.request.urlopen(urllib.request.Request(url,headers={"User-Agent":"Mozilla/5.0"}),timeout=20)
+                body=r.read(1000).decode("utf-8","replace")
+                print(i+1,"HTTP",r.status,"sec",round(time.time()-t,3),"body",re.sub(r"\s+"," ",body)[:180])
+              except Exception as e:
+                print(i+1,"ERR",repr(e),"sec",round(time.time()-t,3))
+              time.sleep(0.8)
+          PY
