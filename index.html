@@ -15,7 +15,7 @@
   --danger:#d92d20;--dangerBg:#fff1f0
 }
 *{box-sizing:border-box}
-html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans KR",sans-serif;-webkit-font-smoothing:antialiased;overflow-x:hidden;overflow-y:auto}
+html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans KR",sans-serif;-webkit-font-smoothing:antialiased;overflow-x:clip;overflow-y:visible}
 button,input,select{font:inherit}button{cursor:pointer}button:disabled{cursor:not-allowed;opacity:.5}
 .app{max-width:900px;margin:0 auto;min-height:100vh;padding-bottom:calc(160px + env(safe-area-inset-bottom))}
 header{position:sticky;top:0;z-index:40;background:rgba(247,248,252,.96);backdrop-filter:blur(16px);border-bottom:1px solid var(--line);padding:13px 15px 10px}
@@ -121,7 +121,7 @@ const DEFAULT_HONORIFICS=['집사님','목사님','사모님','권사님','장�
 const APP_PUBLIC_URL='https://hossea123456789-design.github.io/WORSHIP-SCHEDULE/';
 const KAKAO_JAVASCRIPT_KEY='c14b7dd534f10ac1fc266ba52c9e7a56';
 const STORAGE_PREFIX='worship_fast_v3_';
-const APP_VERSION='v3.20.3';
+const APP_VERSION='v3.20.4';
 const BOOTSTRAP_TIMEOUT_MS=25000;
 const MUTATE_TIMEOUT_MS=25000;
 
@@ -178,6 +178,8 @@ let auxiliaryVerifiedAt=0;
 let globalProcessSettleTimer=null;
 let processDockTimer=null;
 let processMotionTimer=null;
+let processDockAlignTimer=null;
+let processDockScrollRaf=0;
 
 function safeGet(k){try{return localStorage.getItem(STORAGE_PREFIX+k)}catch(e){return null}}
 function safeSet(k,v){try{localStorage.setItem(STORAGE_PREFIX+k,v)}catch(e){}}
@@ -361,10 +363,13 @@ function processDockTarget_(){
   const r=today.getBoundingClientRect();
   if(!r.width||!r.height)return null;
 
-  // 날짜 pill의 '왼쪽'에 수직 중앙 정렬: 점 가장자리와 pill 사이 약 7px 간격.
+  // 초록 점(지름 9px)의 중심을 날짜 버튼의 세로 중심에 정확히 맞춥니다.
+  // 점 오른쪽 가장자리와 버튼 왼쪽 사이의 간격은 7px입니다.
+  const dotRadius=4.5;
+  const gap=7;
   return {
-    x:Math.max(8,r.left-11.5),
-    y:r.top+r.height/2
+    x:Math.max(dotRadius+4,r.left-gap-dotRadius),
+    y:(r.top+r.bottom)/2
   };
 }
 
@@ -396,10 +401,15 @@ function moveCompactProcessToDock_(){
 
   el.style.setProperty('--process-dock-dx',(prevDx+(target.x-currentX))+'px');
   el.style.setProperty('--process-dock-dy',(prevDy+(target.y-currentY))+'px');
-  requestAnimationFrame(()=>el.classList.add('statusDocked'));
+  requestAnimationFrame(()=>{
+    el.classList.add('statusDocked');
+    scheduleProcessDockAlignment_();
+  });
 }
 
 function dockProcessStatus_(){
+  clearTimeout(processDockAlignTimer);
+  processDockAlignTimer=null;
   clearTimeout(processDockTimer);
   processDockTimer=null;
   clearTimeout(processMotionTimer);
@@ -474,6 +484,8 @@ function expandProcessStatus_(){
 }
 
 function beginProcessWorkVisual_(){
+  clearTimeout(processDockAlignTimer);
+  processDockAlignTimer=null;
   clearTimeout(processDockTimer);
   processDockTimer=null;
 
@@ -520,13 +532,33 @@ function refreshProcessDockTarget_(){
   const d=dot.getBoundingClientRect();
   const currentX=d.left+d.width/2;
   const currentY=d.top+d.height/2;
+  const diffX=target.x-currentX;
+  const diffY=target.y-currentY;
+  if(Math.abs(diffX)<0.5&&Math.abs(diffY)<0.5)return;
   const dx=parseFloat(el.style.getPropertyValue('--process-dock-dx'))||0;
   const dy=parseFloat(el.style.getPropertyValue('--process-dock-dy'))||0;
-  el.style.setProperty('--process-dock-dx',(dx+(target.x-currentX))+'px');
-  el.style.setProperty('--process-dock-dy',(dy+(target.y-currentY))+'px');
+  el.style.setProperty('--process-dock-dx',(dx+diffX)+'px');
+  el.style.setProperty('--process-dock-dy',(dy+diffY)+'px');
 }
 
-window.addEventListener('resize',()=>setTimeout(refreshProcessDockTarget_,80),{passive:true});
+function scheduleProcessDockAlignment_(){
+  clearTimeout(processDockAlignTimer);
+  processDockAlignTimer=setTimeout(()=>{
+    processDockAlignTimer=null;
+    refreshProcessDockTarget_();
+  },680);
+}
+
+window.addEventListener('resize',()=>{
+  scheduleProcessDockAlignment_();
+},{passive:true});
+window.addEventListener('scroll',()=>{
+  if(processDockScrollRaf)return;
+  processDockScrollRaf=requestAnimationFrame(()=>{
+    processDockScrollRaf=0;
+    if(!processDockAlignTimer)refreshProcessDockTarget_();
+  });
+},{passive:true});
 
 function setProcess(text,type='ok',detail='',progress=null){
   processStatus=text;
