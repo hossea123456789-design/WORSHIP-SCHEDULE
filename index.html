@@ -84,7 +84,7 @@ main{padding:15px 15px 36px}.panel{display:none}.panel.active{display:block}.sec
 .prayerRemoveBtn{flex:0 0 auto;border:1px solid #f6d9dc;border-radius:9px;background:#fff1f2;color:#b42339;font-size:9px;font-weight:900;padding:9px 8px}
 .prayerEditorEmpty{padding:14px;text-align:center;color:#818797;font-size:10px}
 /* 사용자 지정 역할 색상 */
-.roleDot.roleCustom{background:var(--role-color)}
+.roleDot.roleCustom{background:var(--role-color);border:1px solid rgba(0,0,0,.08)}
 .person.roleCustom,.cellPerson.roleCustom,.tag.roleCustom,.roleColorSample.roleCustom{background:var(--role-bg);color:var(--role-ink)}
 .roleChipColor{display:inline-flex;align-items:center;gap:7px}
 .roleChipColor .roleDot{width:9px;height:9px}
@@ -152,7 +152,7 @@ const DEFAULT_HONORIFICS=['집사님','목사님','사모님','권사님','장�
 const APP_PUBLIC_URL='https://hossea123456789-design.github.io/WORSHIP-SCHEDULE/';
 const KAKAO_JAVASCRIPT_KEY='c14b7dd534f10ac1fc266ba52c9e7a56';
 const STORAGE_PREFIX='worship_fast_v3_';
-const APP_VERSION='v3.20.4';
+const APP_VERSION='v3.20.5';
 const BOOTSTRAP_TIMEOUT_MS=25000;
 const MUTATE_TIMEOUT_MS=25000;
 
@@ -3842,6 +3842,7 @@ function openMemberForm(id=''){
     <div class="formField"><label>가능 역할</label><div class="checkWrap">
       ${STATE.roles.map(r=>`<label class="checkPill"><input type="checkbox" value="${r.role_id}" ${selected.has(String(r.role_id))?'checked':''}><span>${escapeHtml(r.role_name)}</span></label>`).join('')}
     </div></div>
+    ${id?'':'<div class="hint" style="margin-bottom:10px">새 멤버는 기도 순서에 자동으로 등록되지 않습니다. 기도에 참여할 경우 아래의 기도 순서 관리에서 추가하세요.</div>'}
     <div class="modalActions">
       ${id?`<button class="dangerBtn" onclick="deleteMember('${id}')">삭제</button>`:''}
       <button class="primaryBtn" onclick="saveMemberForm('${id}')">저장</button>
