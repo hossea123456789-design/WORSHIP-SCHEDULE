@@ -105,7 +105,7 @@ main{padding:15px 15px 36px}.panel{display:none}.panel.active{display:block}.sec
 
 const PLAYLIST_ID='PLDThR_8ShZAFTVEZgp2jtZaha8bThHZXB';
 const STORAGE_PREFIX='worship_fast_v3_';
-const APP_VERSION='v3.18.3';
+const APP_VERSION='v3.18.4';
 const BOOTSTRAP_TIMEOUT_MS=25000;
 const MUTATE_TIMEOUT_MS=25000;
 
@@ -146,6 +146,7 @@ let AFTER_YOUTUBE_LINKS=[];
 let afterLinksState='idle';
 let afterLinksLoading=false;
 let afterLinksSaving=false;
+let afterLinksRetryTimer=null;
 let lastHardConnectionToastAt=0;
 let hardConnectionDown=false;
 let readFailureStreak=0;
@@ -210,6 +211,48 @@ function loadCachedAfterYoutubeLinks_(){
 }
 function cacheAfterYoutubeLinks_(){
   try{safeSet('after_youtube_links_cache',JSON.stringify({links:AFTER_YOUTUBE_LINKS.slice(),cachedAt:Date.now()}))}catch(e){}
+}
+function getPendingAfterYoutubeLinks_(){
+  try{
+    const x=JSON.parse(safeGet('after_youtube_links_pending')||'null');
+    if(!x||!Array.isArray(x.links))return null;
+    return {
+      links:normalizeAfterYoutubeClient_(x.links),
+      createdAt:Number(x.createdAt||0),
+      attempts:Number(x.attempts||0)
+    };
+  }catch(e){}
+  return null;
+}
+function setPendingAfterYoutubeLinks_(links,attempts=0){
+  const normalized=normalizeAfterYoutubeClient_(links);
+  safeSet('after_youtube_links_pending',JSON.stringify({
+    links:normalized,
+    createdAt:Date.now(),
+    attempts:Number(attempts||0)
+  }));
+  return normalized;
+}
+function clearPendingAfterYoutubeLinks_(){
+  safeRemove('after_youtube_links_pending');
+  clearTimeout(afterLinksRetryTimer);
+  afterLinksRetryTimer=null;
+}
+function restorePendingAfterYoutubeLinks_(){
+  const pending=getPendingAfterYoutubeLinks_();
+  if(!pending)return false;
+  AFTER_YOUTUBE_LINKS=pending.links.slice();
+  afterLinksState='pending';
+  cacheAfterYoutubeLinks_();
+  return true;
+}
+function scheduleAfterYoutubePendingSync_(delay=1800){
+  clearTimeout(afterLinksRetryTimer);
+  if(!getPendingAfterYoutubeLinks_()||afterLinksSaving||!navigator.onLine)return;
+  afterLinksRetryTimer=setTimeout(()=>{
+    afterLinksRetryTimer=null;
+    syncPendingAfterYoutubeLinks_(true);
+  },delay);
 }
 
 function scheduleScoreMetaWarm_(){
@@ -1679,10 +1722,11 @@ function renderAfterYoutubeLinks(){
   if(!list)return;
   if(addBtn)addBtn.disabled=afterLinksSaving;
   if(status){
-    if(afterLinksSaving)status.textContent='팀 공용 목록에 저장 중…';
+    if(afterLinksSaving)status.textContent='팀 공용 목록에 저장 중… · 앱을 닫아도 다음 실행에서 자동 재시도';
+    else if(afterLinksState==='pending')status.textContent='서버 저장 대기 · 연결되면 자동 저장';
     else if(afterLinksLoading)status.textContent='서버의 예배 후 찬양 목록 확인 중…';
-    else if(afterLinksState==='error')status.textContent='목록을 확인하지 못했습니다. 기존 표시 내용은 유지합니다.';
-    else if(afterLinksState==='loaded')status.textContent='팀 공용 목록 · '+AFTER_YOUTUBE_LINKS.length+'개';
+    else if(afterLinksState==='error')status.textContent='서버 확인 지연 · 마지막 목록을 유지합니다.';
+    else if(afterLinksState==='loaded')status.textContent='저장 완료 · 팀 공용 목록 · '+AFTER_YOUTUBE_LINKS.length+'개';
     else status.textContent='';
   }
   if(!AFTER_YOUTUBE_LINKS.length){
@@ -1700,9 +1744,62 @@ function renderAfterYoutubeLinks(){
   });
   list.innerHTML=html;
 }
+async function syncPendingAfterYoutubeLinks_(silent=true){
+  const pending=getPendingAfterYoutubeLinks_();
+  if(!pending)return true;
+  if(afterLinksSaving)return false;
+
+  afterLinksSaving=true;
+  AFTER_YOUTUBE_LINKS=pending.links.slice();
+  afterLinksState='pending';
+  cacheAfterYoutubeLinks_();
+  renderAfterYoutubeLinks();
+
+  try{
+    const res=await scorePost('afterLinksSet',{
+      linksJson:JSON.stringify(pending.links)
+    },30000);
+    if(!res||res.ok!==true)throw new Error((res&&res.error)||'YouTube 목록 저장에 실패했습니다.');
+
+    const confirmed=normalizeAfterYoutubeClient_(
+      Array.isArray(res.links)?res.links:pending.links
+    );
+    AFTER_YOUTUBE_LINKS=confirmed;
+    afterLinksState='loaded';
+    cacheAfterYoutubeLinks_();
+    clearPendingAfterYoutubeLinks_();
+    logEvent('INFO','AFTER_LINKS_SYNC_OK','count='+confirmed.length);
+    if(!silent)showToast('예배 후 YouTube 목록 저장 완료');
+    return true;
+  }catch(e){
+    const msg=e&&e.message?e.message:String(e);
+    const retry=setPendingAfterYoutubeLinks_(pending.links,pending.attempts+1);
+    AFTER_YOUTUBE_LINKS=retry.slice();
+    afterLinksState='pending';
+    cacheAfterYoutubeLinks_();
+    logEvent('WARN','AFTER_LINKS_SYNC_PENDING','attempt='+(pending.attempts+1)+' msg='+msg);
+    if(!silent)showToast('서버 저장 대기 · 자동으로 다시 시도합니다');
+    scheduleAfterYoutubePendingSync_(5000);
+    return false;
+  }finally{
+    afterLinksSaving=false;
+    renderAfterYoutubeLinks();
+  }
+}
+
 async function loadAfterYoutubeLinks(silent=true){
   if(afterLinksLoading||afterLinksSaving)return;
-  afterLinksLoading=true;renderAfterYoutubeLinks();
+
+  // 앱이 저장 완료 전에 종료됐던 변경사항이 있으면 서버 조회보다 먼저 재전송합니다.
+  if(getPendingAfterYoutubeLinks_()){
+    restorePendingAfterYoutubeLinks_();
+    renderAfterYoutubeLinks();
+    const synced=await syncPendingAfterYoutubeLinks_(silent);
+    if(!synced)return;
+  }
+
+  afterLinksLoading=true;
+  renderAfterYoutubeLinks();
   try{
     const res=await scoreJsonp('afterLinks',30000);
     if(!res||res.ok!==true)throw new Error((res&&res.error)||'예배 후 YouTube 목록을 불러오지 못했습니다.');
@@ -1710,26 +1807,26 @@ async function loadAfterYoutubeLinks(silent=true){
     afterLinksState='loaded';
     cacheAfterYoutubeLinks_();
   }catch(e){
-    afterLinksState='error';
+    // 조회가 실패해도 마지막 정상 캐시를 빈 목록으로 덮어쓰지 않습니다.
+    afterLinksState=AFTER_YOUTUBE_LINKS.length?'cached':'error';
     if(!silent)showToast('예배 후 YouTube 목록을 확인하지 못했습니다');
     logEvent('WARN','AFTER_LINKS_LOAD_FAIL',e&&e.message?e.message:String(e));
-  }finally{afterLinksLoading=false;renderAfterYoutubeLinks()}
+  }finally{
+    afterLinksLoading=false;
+    renderAfterYoutubeLinks();
+  }
 }
+
 async function saveAfterYoutubeLinks_(next,previous){
   if(afterLinksSaving)return false;
-  afterLinksSaving=true;
-  AFTER_YOUTUBE_LINKS=normalizeAfterYoutubeClient_(next);
+
+  // 서버 응답 전에 앱이 종료돼도 복구할 수 있도록 전송 전 원하는 최종 목록부터 영구 저장합니다.
+  AFTER_YOUTUBE_LINKS=setPendingAfterYoutubeLinks_(next,0);
+  afterLinksState='pending';
+  cacheAfterYoutubeLinks_();
   renderAfterYoutubeLinks();
-  try{
-    const res=await scorePost('afterLinksSet',{linksJson:JSON.stringify(AFTER_YOUTUBE_LINKS)},30000);
-    if(!res||res.ok!==true)throw new Error((res&&res.error)||'YouTube 목록 저장에 실패했습니다.');
-    AFTER_YOUTUBE_LINKS=normalizeAfterYoutubeClient_(res.links||AFTER_YOUTUBE_LINKS);
-    afterLinksState='loaded';cacheAfterYoutubeLinks_();showToast('예배 후 YouTube 목록을 저장했습니다');return true;
-  }catch(e){
-    AFTER_YOUTUBE_LINKS=previous.slice();afterLinksState='error';
-    logEvent('ERROR','AFTER_LINKS_SAVE_FAIL',e&&e.message?e.message:String(e));
-    showToast('YouTube 목록 저장 실패 · 이전 목록으로 복구했습니다');return false;
-  }finally{afterLinksSaving=false;renderAfterYoutubeLinks()}
+
+  return await syncPendingAfterYoutubeLinks_(false);
 }
 async function addAfterYoutubeLinks(){
   const input=document.getElementById('afterYoutubeInput');
@@ -3045,9 +3142,11 @@ loadCachedScoreMeta_();
 renderScore();
 loadCachedAfterScoreMeta_();
 loadCachedAfterYoutubeLinks_();
+restorePendingAfterYoutubeLinks_();
 renderAfterScore();
 renderAfterYoutubeLinks();
 switchPlaylistSubtab('main');
+scheduleAfterYoutubePendingSync_(1500);
 
 // 악보 메타는 일정 revision 확인이 끝난 뒤 순차적으로 자동 확인합니다.
 // 마지막 정상 악보 정보는 즉시 표시하되, 확인 전에는 '등록된 악보 없음'으로 판정하지 않습니다.
@@ -3065,6 +3164,7 @@ window.addEventListener('online',()=>{
   reconnectTimer=null;
   if(STATE)pollRevision(true);
   else bootstrap(false);
+  if(getPendingAfterYoutubeLinks_())scheduleAfterYoutubePendingSync_(500);
 });
 
 window.addEventListener('offline',()=>{
@@ -3084,6 +3184,7 @@ document.addEventListener('visibilitychange',()=>{
     renderDateSettings();
   }
   if(Date.now()-lastReadSuccessAt>60000)setTimeout(()=>pollRevision(true),500);
+  if(getPendingAfterYoutubeLinks_())scheduleAfterYoutubePendingSync_(500);
 });
 </script>
 </body>
