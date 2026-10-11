@@ -1,5 +1,5 @@
 /**
- * WORSHIP_SCORE_API v3.12.8
+ * WORSHIP_SCORE_API v3.12.9
  * 찬양팀 악보 전용 standalone Apps Script backend
  *
  * 현재 프런트(v3.12.6) 계약:
@@ -16,7 +16,7 @@
  * - https://www.googleapis.com/auth/script.external_request
  */
 
-const SCORE_API_VERSION = 'v3.12.8';
+const SCORE_API_VERSION = 'v3.12.9';
 
 const SCORE_REQUIRED_SCOPES = Object.freeze([
   'https://www.googleapis.com/auth/drive',
@@ -50,6 +50,12 @@ const AFTER_SCORE_STORE = Object.freeze({
   YOUTUBE_LINKS_PROP: 'WORSHIP_AFTER_YOUTUBE_LINKS'
 });
 
+const AFTER_LINK_STORE = Object.freeze({
+  FOLDER_PROP: 'WORSHIP_AFTER_LINK_FOLDER_ID',
+  FOLDER_NAME: 'WORSHIP-SCHEDULE_AFTER_SERVICE_DATA',
+  FILE_NAME: 'youtube-links.json'
+});
+
 function resetScoreAuthorization() {
   ScriptApp.invalidateAuth();
   return '기존 Apps Script 권한을 초기화했습니다. 편집기를 새로고침한 뒤 setupScoreStandalone을 실행해주세요. 누락된 권한은 setupScoreStandalone이 자동으로 요청합니다.';
@@ -71,6 +77,7 @@ function setupScoreStandalone() {
 
   const folder = getScoreFolder_(true);
   const afterFolder = getAfterScoreFolder_(true);
+  const afterLinkFolder = getAfterLinkFolder_(true);
   const rootName = DriveApp.getRootFolder().getName();
 
   // DriveApp 자체의 쓰기 권한을 실제로 확인합니다.
@@ -99,6 +106,7 @@ function setupScoreStandalone() {
     '주일 악보 폴더 ID: ' + folder.getId(),
     '예배 후 악보 폴더: ' + afterFolder.getName(),
     '예배 후 악보 폴더 ID: ' + afterFolder.getId(),
+    '예배 후 링크 데이터 폴더: ' + afterLinkFolder.getName(),
     'Drive API 쓰기 권한: 정상'
   ].join('\n');
 }
@@ -254,6 +262,7 @@ function doPost(e) {
 
 function scoreHealth_() {
   const folder = getScoreFolder_(true);
+  const afterLinkFolder = getAfterLinkFolder_(true);
   DriveApp.getRootFolder().getName();
 
   const probe = UrlFetchApp.fetch('https://www.google.com/generate_204', {
@@ -274,8 +283,10 @@ function scoreHealth_() {
     service: SCORE_STORE.APP,
     version: SCORE_API_VERSION,
     storageReady: true,
+    afterLinksStorage: 'drive+properties',
     capabilities: ['meta','uploadDirect','uploadStart','uploadChunk','delete','afterMeta','afterUploadDirect','afterUploadStart','afterUploadChunk','afterDelete','afterLinks','afterLinksSet'],
     folderId: folder.getId(),
+    afterLinkFolderId: afterLinkFolder.getId(),
     file: getCurrentScoreMeta_()
   };
 }
@@ -1213,11 +1224,102 @@ function normalizeAfterYoutubeLinks_(rawLinks) {
   return out;
 }
 
+function getAfterLinkFolder_(createIfMissing) {
+  const props = PropertiesService.getScriptProperties();
+  const savedId = String(props.getProperty(AFTER_LINK_STORE.FOLDER_PROP) || '');
+  const saved = scoreFolderByIdIfUsable_(savedId);
+  if (saved) return saved;
+
+  const root = DriveApp.getRootFolder();
+  const it = root.getFoldersByName(AFTER_LINK_STORE.FOLDER_NAME);
+  while (it.hasNext()) {
+    const folder = it.next();
+    try {
+      if (folder.isTrashed()) continue;
+      props.setProperty(AFTER_LINK_STORE.FOLDER_PROP, folder.getId());
+      return folder;
+    } catch (_) {}
+  }
+
+  if (!createIfMissing) return null;
+  const folder = DriveApp.createFolder(AFTER_LINK_STORE.FOLDER_NAME);
+  props.setProperty(AFTER_LINK_STORE.FOLDER_PROP, folder.getId());
+  return folder;
+}
+
+function readAfterYoutubeLinksFile_() {
+  const folder = getAfterLinkFolder_(false);
+  if (!folder) return null;
+
+  const files = folder.getFilesByName(AFTER_LINK_STORE.FILE_NAME);
+  let newest = null;
+  let newestTime = -1;
+  while (files.hasNext()) {
+    const file = files.next();
+    try {
+      if (file.isTrashed()) continue;
+      const time = file.getLastUpdated().getTime();
+      if (time > newestTime) {
+        newest = file;
+        newestTime = time;
+      }
+    } catch (_) {}
+  }
+  if (!newest) return null;
+
+  try {
+    const parsed = JSON.parse(newest.getBlob().getDataAsString('UTF-8') || '{}');
+    const values = Array.isArray(parsed) ? parsed : parsed.links;
+    if (!Array.isArray(values)) return null;
+    return normalizeAfterYoutubeLinks_(values);
+  } catch (_) {
+    return null;
+  }
+}
+
+function writeAfterYoutubeLinksFile_(links) {
+  const folder = getAfterLinkFolder_(true);
+  const payload = JSON.stringify({
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    links: normalizeAfterYoutubeLinks_(links)
+  });
+
+  // 새 파일을 먼저 만든 뒤 구 파일을 정리해 저장 중 실패 시 기존 데이터가 남도록 합니다.
+  const newFile = folder.createFile(
+    AFTER_LINK_STORE.FILE_NAME,
+    payload,
+    MimeType.PLAIN_TEXT
+  );
+
+  const files = folder.getFilesByName(AFTER_LINK_STORE.FILE_NAME);
+  while (files.hasNext()) {
+    const file = files.next();
+    if (file.getId() === newFile.getId()) continue;
+    try { file.setTrashed(true); } catch (_) {}
+  }
+  return newFile.getId();
+}
+
 function getAfterYoutubeLinks_() {
+  // Drive 파일을 영구 원본으로 우선 사용합니다.
+  const fromDrive = readAfterYoutubeLinksFile_();
+  if (fromDrive !== null) {
+    PropertiesService.getScriptProperties().setProperty(
+      AFTER_SCORE_STORE.YOUTUBE_LINKS_PROP,
+      JSON.stringify(fromDrive)
+    );
+    return fromDrive;
+  }
+
+  // 기존 v3.12.8 Script Properties 데이터가 있으면 읽고 Drive로 자동 마이그레이션합니다.
   const raw = PropertiesService.getScriptProperties().getProperty(AFTER_SCORE_STORE.YOUTUBE_LINKS_PROP);
   if (!raw) return [];
+
   try {
-    return normalizeAfterYoutubeLinks_(JSON.parse(raw));
+    const links = normalizeAfterYoutubeLinks_(JSON.parse(raw));
+    try { writeAfterYoutubeLinksFile_(links); } catch (_) {}
+    return links;
   } catch (_) {
     return [];
   }
@@ -1230,12 +1332,27 @@ function setAfterYoutubeLinks_(linksJson) {
   } catch (_) {
     throw new Error('YouTube 링크 목록 형식이 올바르지 않습니다.');
   }
+
   const links = normalizeAfterYoutubeLinks_(parsed);
-  PropertiesService.getScriptProperties().setProperty(
-    AFTER_SCORE_STORE.YOUTUBE_LINKS_PROP,
-    JSON.stringify(links)
-  );
-  return links;
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    // Properties + Drive JSON 두 곳 모두 기록합니다.
+    PropertiesService.getScriptProperties().setProperty(
+      AFTER_SCORE_STORE.YOUTUBE_LINKS_PROP,
+      JSON.stringify(links)
+    );
+    writeAfterYoutubeLinksFile_(links);
+
+    // 기록 직후 영구 원본을 다시 읽어 실제 저장값까지 검증합니다.
+    const verified = readAfterYoutubeLinksFile_();
+    if (verified === null || JSON.stringify(verified) !== JSON.stringify(links)) {
+      throw new Error('예배 후 YouTube 링크 저장 검증에 실패했습니다.');
+    }
+    return verified;
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function cleanupStaleScoreUploads_() {
