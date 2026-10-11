@@ -76,7 +76,7 @@ main{padding:15px 15px 36px}.panel{display:none}.panel.active{display:block}.sec
 <div class="playlistSubTabs"><button class="playlistSubTab active" type="button" data-playlist-sub="main">주일 찬양</button><button class="playlistSubTab" type="button" data-playlist-sub="after">예배 후 찬양</button></div>
 <div class="playlistSubPane" id="playlistMainPane">
   <div class="card playlistCard"><div class="playlistPaneTitle"><b>주일 찬양 재생목록</b></div><div class="youtubeBox"><iframe id="youtubeFrame" title="주일 찬양 재생목록" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe></div><a class="ytLink" id="youtubeLink" target="_blank" rel="noopener">▶ YouTube에서 열기</a></div>
-  <div class="card scoreCard"><div class="scoreHead"><h3>악보 자료</h3><button class="primaryBtn" id="scoreUploadBtn">+ 악보 올리기</button></div><div class="scoreBody"><input id="scoreFileInput" type="file" accept="application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png,.pdf,.ppt,.pptx,.doc,.docx,.jpg,.jpeg,.png" hidden><div id="scoreArea"><div class="scoreEmpty"><b>등록된 악보가 없습니다</b><span>PDF · PPT · PPTX 등 파일을 올리면 팀원 모두 같은 최신 악보를 볼 수 있습니다.</span></div></div><div class="scoreStatus" id="scoreStatus"></div><div class="scoreProgress" id="scoreProgress" hidden><div class="scoreProgressTop"><span id="scoreProgressLabel">업로드 준비 중</span><span class="scoreProgressPct" id="scoreProgressPct">0%</span></div><div class="scoreProgressTrack"><div class="scoreProgressFill" id="scoreProgressFill"></div></div><div class="scoreProgressDetail" id="scoreProgressDetail"></div></div></div></div>
+  <div class="card scoreCard"><div class="scoreHead"><h3>악보 자료</h3><button class="primaryBtn" id="scoreUploadBtn">+ 악보 올리기</button></div><div class="scoreBody"><input id="scoreFileInput" type="file" accept="application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png,.pdf,.ppt,.pptx,.doc,.docx,.jpg,.jpeg,.png" hidden><div id="scoreArea"><div class="scoreEmpty"><b>주일 악보 최신 여부 확인 중…</b><span>서버 확인이 끝나기 전에는 “등록된 악보 없음”으로 표시하지 않습니다.</span></div></div></div></div>
 </div>
 <div class="playlistSubPane" id="playlistAfterPane" hidden>
   <div class="card afterYoutubeCard">
@@ -84,10 +84,10 @@ main{padding:15px 15px 36px}.panel{display:none}.panel.active{display:block}.sec
     <div class="afterYoutubeBody">
       <div class="afterLinkEditor"><textarea id="afterYoutubeInput" rows="2" placeholder="YouTube 영상/재생목록 링크 붙여넣기&#10;여러 개면 줄바꿈으로 입력"></textarea><button class="primaryBtn" id="afterYoutubeAddBtn" type="button">링크 추가</button></div>
       <div class="afterLinkStatus" id="afterLinkStatus"></div>
-      <div id="afterYoutubeList"></div>
+      <div id="afterYoutubeList"><div class="afterYoutubeEmpty">예배 후 찬양 링크 최신 여부를 확인하고 있습니다.<br>확인이 끝나기 전에는 빈 목록으로 판정하지 않습니다.</div></div>
     </div>
   </div>
-  <div class="card scoreCard"><div class="scoreHead"><div><h3>예배 후 찬양 악보</h3><div class="afterSectionSub">주일 악보와 별도로 저장됩니다.</div></div><button class="primaryBtn" id="afterScoreUploadBtn">+ 악보 올리기</button></div><div class="scoreBody"><input id="afterScoreFileInput" type="file" accept="application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png,.pdf,.ppt,.pptx,.doc,.docx,.jpg,.jpeg,.png" hidden><div id="afterScoreArea"><div class="scoreEmpty"><b>예배 후 악보 최신 여부 확인 중…</b><span>예배 후 찬양 전용 악보를 확인하고 있습니다.</span></div></div><div class="scoreStatus" id="afterScoreStatus"></div><div class="scoreProgress" id="afterScoreProgress" hidden><div class="scoreProgressTop"><span id="afterScoreProgressLabel">업로드 준비 중</span><span class="scoreProgressPct" id="afterScoreProgressPct">0%</span></div><div class="scoreProgressTrack"><div class="scoreProgressFill" id="afterScoreProgressFill"></div></div><div class="scoreProgressDetail" id="afterScoreProgressDetail"></div></div></div></div>
+  <div class="card scoreCard"><div class="scoreHead"><div><h3>예배 후 찬양 악보</h3><div class="afterSectionSub">주일 악보와 별도로 저장됩니다.</div></div><button class="primaryBtn" id="afterScoreUploadBtn">+ 악보 올리기</button></div><div class="scoreBody"><input id="afterScoreFileInput" type="file" accept="application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png,.pdf,.ppt,.pptx,.doc,.docx,.jpg,.jpeg,.png" hidden><div id="afterScoreArea"><div class="scoreEmpty"><b>예배 후 악보 최신 여부 확인 중…</b><span>서버 확인이 끝나기 전에는 “등록된 악보 없음”으로 표시하지 않습니다.</span></div></div></div></div>
 </div></section>
 <section id="tab-settings" class="panel"><div class="sectionTitle"><h2>설정</h2></div>
 <div class="card settingCard"><div class="cardHead"><h3>찬양 일정 날짜</h3><button class="primaryBtn" id="saveEventDates" disabled>날짜 저장</button></div><div class="cardBody"><div class="dateTabs"><button class="dateTab active" data-off="0">이번 달</button><button class="dateTab" data-off="1">다음 달</button></div><div id="dateSettingTitle" style="font-size:12px;font-weight:950;margin-bottom:8px"></div><div class="hint" id="dateSettingHint" style="margin-bottom:8px">날짜를 자유롭게 선택/해제한 뒤 날짜 저장을 한 번만 누르세요.</div><div class="weekdayGrid"><div class="sun">일</div><div>월</div><div>화</div><div>수</div><div>목</div><div>금</div><div>토</div></div><div class="dateGrid" id="dateGrid"></div></div></div>
@@ -108,7 +108,7 @@ const PLAYLIST_ID='PLDThR_8ShZAFTVEZgp2jtZaha8bThHZXB';
 const APP_PUBLIC_URL='https://hossea123456789-design.github.io/WORSHIP-SCHEDULE/';
 const KAKAO_JAVASCRIPT_KEY='c14b7dd534f10ac1fc266ba52c9e7a56';
 const STORAGE_PREFIX='worship_fast_v3_';
-const APP_VERSION='v3.19.1';
+const APP_VERSION='v3.19.2';
 const BOOTSTRAP_TIMEOUT_MS=25000;
 const MUTATE_TIMEOUT_MS=25000;
 
@@ -161,6 +161,10 @@ let serverFresh=false;
 let runtimeMonthKey=monthKey(new Date());
 let modalPageScrollY=null;
 let modalTouchLastY=null;
+let auxiliaryRefreshPromise=null;
+let auxiliaryRefreshInFlight=false;
+let auxiliaryVerifiedAt=0;
+let globalProcessSettleTimer=null;
 
 function safeGet(k){try{return localStorage.getItem(STORAGE_PREFIX+k)}catch(e){return null}}
 function safeSet(k,v){try{localStorage.setItem(STORAGE_PREFIX+k,v)}catch(e){}}
@@ -262,9 +266,11 @@ function scheduleAfterYoutubePendingSync_(delay=1800){
 }
 
 function scheduleScoreMetaWarm_(){
-  if(scoreBusy||scoreMetaLoading||scoreMetaState==='loaded')return;
+  if(auxiliaryRefreshInFlight||auxiliaryRefreshPromise)return;
   clearTimeout(scoreMetaWarmTimer);
-  scoreMetaWarmTimer=setTimeout(()=>loadScoreMeta(true),350);
+  scoreMetaWarmTimer=setTimeout(()=>{
+    refreshAuxiliaryData_(false);
+  },350);
 }
 function requireFreshWrite_(label='수정'){
   if(STATE&&serverFresh&&!hardConnectionDown&&!readInFlight)return true;
@@ -955,6 +961,137 @@ function setSyncProgress(pct,label,cached=!!STATE,detail=''){
   renderSyncProgress_();
   ensureSyncProgressTimer_();
 }
+function currentGlobalProgress_(){
+  const el=document.getElementById('processStatusPct');
+  const n=parseInt(String(el&&el.textContent||'').replace(/[^0-9]/g,''),10);
+  return Number.isFinite(n)?n:null;
+}
+
+function setUnifiedProcess_(text,detail='',progress=null,type='working'){
+  stopSyncProgress(false);
+  clearTimeout(globalProcessSettleTimer);
+  globalProcessSettleTimer=null;
+  setProcess(text,type,detail,progress);
+}
+
+function globalOperationBusy_(){
+  return !!(
+    readInFlight||flushing||pending.length||
+    scoreBusy||afterScoreBusy||afterLinksSaving||
+    scoreMetaLoading||afterScoreMetaLoading||afterLinksLoading||
+    auxiliaryRefreshInFlight
+  );
+}
+
+function scheduleGlobalProcessSettle_(delay=1200,detail=''){
+  clearTimeout(globalProcessSettleTimer);
+  globalProcessSettleTimer=setTimeout(()=>{
+    globalProcessSettleTimer=null;
+    if(globalOperationBusy_())return;
+    setProcess(
+      '연결 완료',
+      'ok',
+      detail||'일정·악보·찬양 링크 확인이 완료되었습니다.'
+    );
+  },Math.max(0,Number(delay)||0));
+}
+
+function auxiliaryResultSummary_(){
+  const main=scoreMetaState==='error'
+    ?'주일 악보 확인 실패'
+    :(scoreMetaState==='loaded'?(SCORE_META?'주일 악보 확인':'주일 악보 없음 확인'):'주일 악보 확인 중');
+  const after=afterScoreMetaState==='error'
+    ?'예배 후 악보 확인 실패'
+    :(afterScoreMetaState==='loaded'?(AFTER_SCORE_META?'예배 후 악보 확인':'예배 후 악보 없음 확인'):'예배 후 악보 확인 중');
+  const links=afterLinksState==='error'
+    ?'예배 후 링크 확인 실패'
+    :(afterLinksState==='pending'
+      ?'예배 후 링크 저장 확인 대기'
+      :(afterLinksState==='loaded'?('예배 후 링크 '+AFTER_YOUTUBE_LINKS.length+'개 확인'):'예배 후 링크 확인 중'));
+  return [main,after,links];
+}
+
+async function refreshAuxiliaryData_(showProgress=true){
+  if(auxiliaryRefreshPromise)return auxiliaryRefreshPromise;
+
+  auxiliaryRefreshPromise=(async()=>{
+    auxiliaryRefreshInFlight=true;
+    const tasks=[
+      {name:'주일 악보',run:()=>loadScoreMeta(true,true)},
+      {name:'예배 후 악보',run:()=>loadAfterScoreMeta(true,true)},
+      {name:'예배 후 찬양 링크',run:()=>loadAfterYoutubeLinks(true,true)}
+    ];
+    let done=0;
+
+    if(showProgress){
+      setUnifiedProcess_(
+        '일정 확인 완료 · 찬양 자료 확인 중',
+        '주일 악보 · 예배 후 악보 · 예배 후 찬양 링크를 서버에서 확인하고 있습니다. (0/3)',
+        62,
+        'working'
+      );
+    }
+
+    await Promise.all(tasks.map(async task=>{
+      try{
+        await task.run();
+      }catch(e){
+        logEvent('WARN','AUX_REFRESH_TASK_FAIL',task.name+' | '+(e&&e.message?e.message:String(e)));
+      }finally{
+        done++;
+        if(showProgress){
+          const pct=Math.min(96,62+done*11);
+          setUnifiedProcess_(
+            '찬양 자료 확인 중 · '+done+'/3',
+            task.name+' 확인 단계 완료 · '+auxiliaryResultSummary_().join(' · '),
+            pct,
+            'working'
+          );
+        }
+      }
+    }));
+
+    auxiliaryVerifiedAt=Date.now();
+    const failed=scoreMetaState==='error'||afterScoreMetaState==='error'||afterLinksState==='error';
+    const pendingLink=afterLinksState==='pending'||!!getPendingAfterYoutubeLinks_();
+    const summary=auxiliaryResultSummary_().join(' · ');
+
+    if(showProgress){
+      if(failed){
+        setUnifiedProcess_(
+          '일부 자료 최신 확인 실패',
+          summary+' · 실패 항목은 “없음”으로 확정하지 않고 마지막 정상 정보가 있으면 유지합니다.',
+          100,
+          'error'
+        );
+      }else if(pendingLink){
+        setUnifiedProcess_(
+          '자료 확인 완료 · 링크 저장 확인 대기',
+          summary+' · 링크 저장 검증은 별도로 계속 진행합니다.',
+          100,
+          'working'
+        );
+      }else{
+        setUnifiedProcess_(
+          '전체 자료 최신 확인 완료',
+          summary+' · 일정과 찬양 자료를 모두 확인했습니다.',
+          100,
+          'ok'
+        );
+        scheduleGlobalProcessSettle_(1100);
+      }
+    }
+    return !failed;
+  })();
+
+  try{
+    return await auxiliaryRefreshPromise;
+  }finally{
+    auxiliaryRefreshInFlight=false;
+    auxiliaryRefreshPromise=null;
+  }
+}
+
 function startSyncProgress(cached=!!STATE,startPct=null){
   stopSyncProgress(true);
   const initial=Math.max(1,Math.min(90,Math.round(startPct==null?(cached?8:4):startPct)));
@@ -1046,12 +1183,18 @@ async function bootstrap(showLoading=true,silentFailure=false){
     renderAll();
     clearConnectionError();
     if(!silentFailure){
-      finishSyncProgressFast_('최신 상태 확인 완료','서버와 현재 화면의 데이터가 일치합니다.');
-    }else if(['동기화 중…','연결 중…','오프라인','동기화 실패 · 캐시 사용'].includes(processStatus)){
-      setProcess('연결 완료','ok');
+      stopSyncProgress(true);
+      setProcess(
+        '일정 확인 완료 · 찬양 자료 확인 준비',
+        'working',
+        '일정 데이터 반영 완료 · 주일 악보·예배 후 악보·찬양 링크를 이어서 확인합니다.',
+        60
+      );
+      setTimeout(()=>refreshAuxiliaryData_(true),0);
+    }else{
+      scheduleScoreMetaWarm_();
     }
     logEvent('INFO',silentFailure?'BOOTSTRAP_BG_OK':'BOOTSTRAP_OK',`ms=${Math.round(performance.now()-started)} revision=${STATE.revision}`);
-    scheduleScoreMetaWarm_();
     return true;
   }catch(e){
     if(STATE){
@@ -1925,16 +2068,36 @@ function renderAfterYoutubeLinks(){
   const status=document.getElementById('afterLinkStatus');
   const addBtn=document.getElementById('afterYoutubeAddBtn');
   if(!list)return;
-  if(addBtn)addBtn.disabled=afterLinksSaving;
+  if(addBtn)addBtn.disabled=afterLinksSaving||afterLinksLoading;
+
   if(status){
-    status.textContent=AFTER_YOUTUBE_LINKS.length
-      ?'팀 공용 목록 · '+AFTER_YOUTUBE_LINKS.length+'개'
-      :'';
+    if(afterLinksState==='loaded'){
+      status.textContent='서버 확인 완료 · 팀 공용 목록 '+AFTER_YOUTUBE_LINKS.length+'개';
+    }else if(afterLinksState==='cached'){
+      status.textContent='마지막 정상 목록 표시 · 서버 최신 여부 확인 중';
+    }else if(afterLinksState==='pending'){
+      status.textContent='기기 보관 완료 · 서버 저장 확인 대기';
+    }else if(afterLinksState==='error'){
+      status.textContent='최신 확인 실패 · 빈 목록으로 확정하지 않음';
+    }else{
+      status.textContent='서버 최신 여부 확인 중';
+    }
   }
+
   if(!AFTER_YOUTUBE_LINKS.length){
-    list.innerHTML='<div class="afterYoutubeEmpty">'+(afterLinksLoading?'YouTube 목록을 확인하고 있습니다.':'등록된 예배 후 찬양 YouTube 링크가 없습니다.<br>위 입력란에 링크를 추가해주세요.')+'</div>';
+    const pendingState=afterLinksLoading||['idle','cached'].includes(afterLinksState);
+    if(pendingState){
+      list.innerHTML='<div class="afterYoutubeEmpty"><b>예배 후 찬양 링크 확인 중…</b><br>서버 확인이 끝나기 전에는 “등록된 링크 없음”으로 표시하지 않습니다.</div>';
+    }else if(afterLinksState==='error'){
+      list.innerHTML='<div class="afterYoutubeEmpty"><b>링크 정보를 확인하지 못했습니다</b><br>현재 빈 화면은 “등록된 링크 없음”을 의미하지 않습니다.</div>';
+    }else if(afterLinksState==='pending'){
+      list.innerHTML='<div class="afterYoutubeEmpty"><b>링크 저장 확인 대기 중…</b><br>기기에 보관된 변경사항을 서버에서 재확인하고 있습니다.</div>';
+    }else{
+      list.innerHTML='<div class="afterYoutubeEmpty"><b>등록된 예배 후 찬양 링크가 없습니다</b><br>서버 확인이 완료된 상태입니다.</div>';
+    }
     return;
   }
+
   let html='';
   AFTER_YOUTUBE_LINKS.forEach(function(url,i){
     const p=parseYoutubeLink_(url);
@@ -1952,8 +2115,7 @@ function sameAfterYoutubeLinks_(a,b){
   return aa.length===bb.length&&aa.every((x,i)=>x===bb[i]);
 }
 function setAfterLinksGlobalProgress_(text,detail,progress,type='working'){
-  stopSyncProgress();
-  setProcess(text,type,detail,progress);
+  setUnifiedProcess_(text,detail,progress,type);
 }
 
 async function syncPendingAfterYoutubeLinks_(silent=true){
@@ -2061,7 +2223,7 @@ async function syncPendingAfterYoutubeLinks_(silent=true){
   }
 }
 
-async function loadAfterYoutubeLinks(silent=true){
+async function loadAfterYoutubeLinks(silent=true,suppressGlobal=false){
   if(afterLinksLoading||afterLinksSaving)return;
 
   if(getPendingAfterYoutubeLinks_()){
@@ -2074,11 +2236,18 @@ async function loadAfterYoutubeLinks(silent=true){
   const generation=afterLinksGeneration;
   afterLinksLoading=true;
   renderAfterYoutubeLinks();
+  if(!suppressGlobal){
+    setUnifiedProcess_(
+      '예배 후 찬양 링크 최신 여부 확인 중',
+      '팀 공용 서버에서 저장된 YouTube 링크 목록을 확인하고 있습니다.',
+      35,
+      'working'
+    );
+  }
   try{
     const res=await scoreJsonp('afterLinks',30000);
     if(!res||res.ok!==true)throw new Error((res&&res.error)||'예배 후 YouTube 목록을 불러오지 못했습니다.');
 
-    // 저장 동작이 이 조회보다 늦게 시작됐다면 오래된 GET 응답으로 새 링크를 덮지 않습니다.
     if(generation!==afterLinksGeneration||getPendingAfterYoutubeLinks_()){
       logEvent('INFO','AFTER_LINKS_STALE_READ_IGNORED','generation='+generation+' current='+afterLinksGeneration);
       return;
@@ -2087,10 +2256,28 @@ async function loadAfterYoutubeLinks(silent=true){
     AFTER_YOUTUBE_LINKS=normalizeAfterYoutubeClient_(res.links||[]);
     afterLinksState='loaded';
     cacheAfterYoutubeLinks_();
+    if(!suppressGlobal){
+      setUnifiedProcess_(
+        '예배 후 찬양 링크 확인 완료',
+        '서버 확인 완료 · 등록 링크 '+AFTER_YOUTUBE_LINKS.length+'개',
+        100,
+        'ok'
+      );
+      scheduleGlobalProcessSettle_(1000);
+    }
   }catch(e){
     afterLinksState=AFTER_YOUTUBE_LINKS.length?'cached':'error';
+    const msg=e&&e.message?e.message:String(e);
+    if(!suppressGlobal){
+      setUnifiedProcess_(
+        '예배 후 찬양 링크 최신 확인 실패',
+        msg+' · 빈 목록으로 확정하지 않습니다.',
+        currentGlobalProgress_()??72,
+        'error'
+      );
+    }
     if(!silent)showToast('예배 후 YouTube 목록을 확인하지 못했습니다');
-    logEvent('WARN','AFTER_LINKS_LOAD_FAIL',e&&e.message?e.message:String(e));
+    logEvent('WARN','AFTER_LINKS_LOAD_FAIL',msg);
   }finally{
     afterLinksLoading=false;
     renderAfterYoutubeLinks();
@@ -2137,19 +2324,28 @@ async function removeAfterYoutubeLink(index){
   const next=previous.filter(function(_,idx){return idx!==i});
   await saveAfterYoutubeLinks_(next,previous);
 }
-function switchPlaylistSubtab(mode){
+function switchPlaylistSubtab(mode,loadData=true){
   playlistSubMode=mode==='after'?'after':'main';
-  document.querySelectorAll('.playlistSubTab').forEach(function(btn){btn.classList.toggle('active',btn.dataset.playlistSub===playlistSubMode)});
+  document.querySelectorAll('.playlistSubTab').forEach(function(btn){
+    btn.classList.toggle('active',btn.dataset.playlistSub===playlistSubMode);
+  });
   const main=document.getElementById('playlistMainPane');
   const after=document.getElementById('playlistAfterPane');
   if(main)main.hidden=playlistSubMode!=='main';
   if(after)after.hidden=playlistSubMode!=='after';
+
   if(playlistSubMode==='main'){
-    if(scoreMetaState!=='loaded'&&!scoreMetaLoading&&!scoreBusy)loadScoreMeta(true);
+    renderScore();
+    if(loadData&&serverFresh&&scoreMetaState!=='loaded'&&!scoreMetaLoading&&!scoreBusy){
+      loadScoreMeta(true,false);
+    }
   }else{
-    renderAfterYoutubeLinks();renderAfterScore();
-    if(afterScoreMetaState!=='loaded'&&!afterScoreMetaLoading&&!afterScoreBusy)loadAfterScoreMeta(true);
-    if(afterLinksState!=='loaded'&&!afterLinksLoading&&!afterLinksSaving)loadAfterYoutubeLinks(true);
+    renderAfterYoutubeLinks();
+    renderAfterScore();
+    if(loadData&&serverFresh){
+      if(afterScoreMetaState!=='loaded'&&!afterScoreMetaLoading&&!afterScoreBusy)loadAfterScoreMeta(true,false);
+      if(afterLinksState!=='loaded'&&!afterLinksLoading&&!afterLinksSaving)loadAfterYoutubeLinks(true,false);
+    }
   }
 }
 
@@ -2162,10 +2358,20 @@ function formatBytes(n){
 }
 
 function setScoreStatus(text,type=''){
-  const el=document.getElementById('scoreStatus');
-  if(!el)return;
-  el.textContent=text||'';
-  el.className='scoreStatus'+(type?' '+type:'');
+  const msg=String(text||'').trim();
+  if(!msg)return;
+  const pct=currentGlobalProgress_();
+  if(type==='error'){
+    setUnifiedProcess_('주일 악보 작업 실패',msg,pct,'error');
+    return;
+  }
+  if(/완료/.test(msg)){
+    setUnifiedProcess_('주일 악보 업로드 완료',msg,100,'ok');
+    return;
+  }
+  if(type==='working'){
+    setUnifiedProcess_('주일 악보 · '+msg,'악보 파일을 안전하게 처리하고 있습니다.',pct==null?8:pct,'working');
+  }
 }
 
 function formatRemainingSeconds(sec){
@@ -2176,48 +2382,38 @@ function formatRemainingSeconds(sec){
 }
 
 function updateScoreProgress(done,total,startedAt,label='Drive에 업로드 중'){
-  const box=document.getElementById('scoreProgress');
-  const pctEl=document.getElementById('scoreProgressPct');
-  const fill=document.getElementById('scoreProgressFill');
-  const labelEl=document.getElementById('scoreProgressLabel');
-  const detail=document.getElementById('scoreProgressDetail');
-  if(!box||!pctEl||!fill||!labelEl||!detail)return;
-  clearTimeout(scoreProgressHideTimer);
-  box.hidden=false;
-  box.classList.remove('error');
   const safeTotal=Math.max(1,Number(total||1));
   const safeDone=Math.max(0,Math.min(Number(done||0),safeTotal));
   const pct=Math.max(0,Math.min(100,(safeDone/safeTotal)*100));
-  labelEl.textContent=label;
-  pctEl.textContent=`${Math.floor(pct)}%`;
-  fill.style.width=`${pct.toFixed(1)}%`;
   const elapsed=Math.max(.001,(performance.now()-startedAt)/1000);
   let remain='남은 시간 계산 중…';
   if(safeDone>0&&elapsed>=1){
     const rate=safeDone/elapsed;
     if(rate>0)remain=formatRemainingSeconds((safeTotal-safeDone)/rate);
   }
-  if(pct>=100)remain='전송 완료';
-  detail.textContent=`${formatBytes(safeDone)} / ${formatBytes(safeTotal)} · ${remain}`;
+  if(pct>=100)remain='전송 및 저장 완료';
+  setUnifiedProcess_(
+    '주일 악보 · '+label,
+    formatBytes(safeDone)+' / '+formatBytes(safeTotal)+' · '+remain,
+    pct,
+    pct>=100?'ok':'working'
+  );
 }
 
 function failScoreProgress(message){
-  const box=document.getElementById('scoreProgress');
-  const label=document.getElementById('scoreProgressLabel');
-  const detail=document.getElementById('scoreProgressDetail');
-  if(!box||!label||!detail)return;
-  box.hidden=false;
-  box.classList.add('error');
-  label.textContent='업로드 중단';
-  detail.textContent=message||'업로드에 실패했습니다.';
+  setUnifiedProcess_(
+    '주일 악보 업로드 실패',
+    message||'업로드에 실패했습니다.',
+    currentGlobalProgress_(),
+    'error'
+  );
 }
 
 function hideScoreProgress(delay=0){
   clearTimeout(scoreProgressHideTimer);
   scoreProgressHideTimer=setTimeout(()=>{
-    const box=document.getElementById('scoreProgress');
-    if(box){box.hidden=true;box.classList.remove('error')}
-  },delay);
+    if(!scoreBusy&&!globalOperationBusy_())scheduleGlobalProcessSettle_(0);
+  },Math.max(0,Number(delay)||0));
 }
 
 function openScoreFullscreen(){
@@ -2286,43 +2482,52 @@ function renderScore(){
 }
 
 function setAfterScoreStatus(text,type=''){
-  const el=document.getElementById('afterScoreStatus');
-  if(!el)return;
-  el.textContent=text||'';
-  el.className='scoreStatus'+(type?' '+type:'');
+  const msg=String(text||'').trim();
+  if(!msg)return;
+  const pct=currentGlobalProgress_();
+  if(type==='error'){
+    setUnifiedProcess_('예배 후 악보 작업 실패',msg,pct,'error');
+    return;
+  }
+  if(/완료/.test(msg)){
+    setUnifiedProcess_('예배 후 악보 업로드 완료',msg,100,'ok');
+    return;
+  }
+  if(type==='working'){
+    setUnifiedProcess_('예배 후 악보 · '+msg,'악보 파일을 안전하게 처리하고 있습니다.',pct==null?8:pct,'working');
+  }
 }
 function updateAfterScoreProgress(done,total,startedAt,label='Drive에 업로드 중'){
-  const box=document.getElementById('afterScoreProgress');
-  const pctEl=document.getElementById('afterScoreProgressPct');
-  const fill=document.getElementById('afterScoreProgressFill');
-  const labelEl=document.getElementById('afterScoreProgressLabel');
-  const detail=document.getElementById('afterScoreProgressDetail');
-  if(!box||!pctEl||!fill||!labelEl||!detail)return;
-  clearTimeout(afterScoreProgressHideTimer);
-  box.hidden=false;box.classList.remove('error');
   const safeTotal=Math.max(1,Number(total||1));
   const safeDone=Math.max(0,Math.min(Number(done||0),safeTotal));
   const pct=Math.max(0,Math.min(100,(safeDone/safeTotal)*100));
-  labelEl.textContent=label;pctEl.textContent=Math.floor(pct)+'%';fill.style.width=pct.toFixed(1)+'%';
   const elapsed=Math.max(.001,(performance.now()-startedAt)/1000);
   let remain='남은 시간 계산 중…';
-  if(safeDone>0&&elapsed>=1){const rate=safeDone/elapsed;if(rate>0)remain=formatRemainingSeconds((safeTotal-safeDone)/rate)}
-  if(pct>=100)remain='전송 완료';
-  detail.textContent=formatBytes(safeDone)+' / '+formatBytes(safeTotal)+' · '+remain;
+  if(safeDone>0&&elapsed>=1){
+    const rate=safeDone/elapsed;
+    if(rate>0)remain=formatRemainingSeconds((safeTotal-safeDone)/rate);
+  }
+  if(pct>=100)remain='전송 및 저장 완료';
+  setUnifiedProcess_(
+    '예배 후 악보 · '+label,
+    formatBytes(safeDone)+' / '+formatBytes(safeTotal)+' · '+remain,
+    pct,
+    pct>=100?'ok':'working'
+  );
 }
 function failAfterScoreProgress(message){
-  const box=document.getElementById('afterScoreProgress');
-  const label=document.getElementById('afterScoreProgressLabel');
-  const detail=document.getElementById('afterScoreProgressDetail');
-  if(!box||!label||!detail)return;
-  box.hidden=false;box.classList.add('error');label.textContent='업로드 중단';detail.textContent=message||'업로드에 실패했습니다.';
+  setUnifiedProcess_(
+    '예배 후 악보 업로드 실패',
+    message||'업로드에 실패했습니다.',
+    currentGlobalProgress_(),
+    'error'
+  );
 }
 function hideAfterScoreProgress(delay=0){
   clearTimeout(afterScoreProgressHideTimer);
-  afterScoreProgressHideTimer=setTimeout(function(){
-    const box=document.getElementById('afterScoreProgress');
-    if(box){box.hidden=true;box.classList.remove('error')}
-  },delay);
+  afterScoreProgressHideTimer=setTimeout(()=>{
+    if(!afterScoreBusy&&!globalOperationBusy_())scheduleGlobalProcessSettle_(0);
+  },Math.max(0,Number(delay)||0));
 }
 function openAfterScoreFullscreen(){
   const box=document.querySelector('#afterScoreArea .scorePreview');
@@ -2368,20 +2573,56 @@ function renderAfterScore(){
   const verifyLabel=afterScoreMetaState==='loaded'?'':(afterScoreMetaState==='error'?' · 최신 확인 실패(마지막 정상 정보 표시)':' · 최신 여부 확인 중');
   area.innerHTML='<div class="scoreMeta"><div><div class="scoreName">'+escapeHtml(fileName)+'</div><div class="scoreSub">'+escapeHtml(f.updatedAt||'')+(f.size?' · '+formatBytes(f.size):'')+verifyLabel+'</div></div><div class="scoreActions"><button class="primaryBtn" type="button" onclick="shareAfterScore_()">공유</button><a class="ghostBtn" style="text-decoration:none;display:inline-flex;align-items:center" href="'+escapeHtml(downloadUrl)+'" target="_blank" rel="noopener">다운로드</a><a class="ghostBtn" style="text-decoration:none;display:inline-flex;align-items:center" href="'+escapeHtml(f.openUrl||'#')+'" target="_blank" rel="noopener">새 창</a><button class="ghostBtn" id="afterScoreTogglePreview" type="button" onclick="toggleAfterScorePreview()">미리보기 접기</button><button class="ghostBtn" type="button" onclick="openAfterScoreFullscreen()">전체화면</button></div></div>'+previewHtml;
 }
-async function loadAfterScoreMeta(silent=true){
+async function loadAfterScoreMeta(silent=true,suppressGlobal=false){
   if(afterScoreBusy||afterScoreMetaLoading)return;
-  afterScoreMetaLoading=true;afterScoreMetaState='loading';afterScoreMetaError='';renderAfterScore();
+  afterScoreMetaLoading=true;
+  afterScoreMetaState='loading';
+  afterScoreMetaError='';
+  renderAfterScore();
+  if(!suppressGlobal){
+    setUnifiedProcess_(
+      '예배 후 악보 최신 여부 확인 중',
+      '서버에서 현재 등록된 예배 후 악보가 있는지 확인하고 있습니다.',
+      35,
+      'working'
+    );
+  }
   try{
     const res=await scoreJsonp('afterMeta',30000);
     if(!res||res.ok!==true)throw new Error((res&&res.error)||'예배 후 악보 정보를 불러오지 못했습니다.');
-    AFTER_SCORE_META=res.file||null;afterScoreMetaState='loaded';afterScoreMetaError='';cacheAfterScoreMeta_();setAfterScoreStatus('');
+    AFTER_SCORE_META=res.file||null;
+    afterScoreMetaState='loaded';
+    afterScoreMetaError='';
+    cacheAfterScoreMeta_();
+    if(!suppressGlobal){
+      setUnifiedProcess_(
+        '예배 후 악보 확인 완료',
+        AFTER_SCORE_META?('최신 악보 확인: '+String(AFTER_SCORE_META.name||'악보')):'서버 확인 완료 · 현재 등록된 예배 후 악보가 없습니다.',
+        100,
+        'ok'
+      );
+      scheduleGlobalProcessSettle_(1000);
+    }
   }catch(e){
     afterScoreMetaState='error';
     const raw=e&&e.message?e.message:String(e);
-    afterScoreMetaError=/지원하지 않는 GET action|지원하지 않는 악보 작업/.test(raw)?'악보 서버에 예배 후 찬양 기능 업데이트가 필요합니다.':raw;
-    if(!silent)setAfterScoreStatus(afterScoreMetaError,'error');
+    afterScoreMetaError=/지원하지 않는 GET action|지원하지 않는 악보 작업/.test(raw)
+      ?'악보 서버에 예배 후 찬양 기능 업데이트가 필요합니다.'
+      :raw;
+    if(!suppressGlobal){
+      setUnifiedProcess_(
+        '예배 후 악보 최신 확인 실패',
+        afterScoreMetaError+' · 등록된 악보가 없다고 판정하지 않습니다.',
+        currentGlobalProgress_()??72,
+        'error'
+      );
+    }
+    if(!silent)showToast('예배 후 악보 최신 정보를 확인하지 못했습니다');
     logEvent('WARN','AFTER_SCORE_META_FAIL',raw);
-  }finally{afterScoreMetaLoading=false;renderAfterScore()}
+  }finally{
+    afterScoreMetaLoading=false;
+    renderAfterScore();
+  }
 }
 async function ensureAfterScoreApiReady(){
   const res=await scoreJsonp('health',30000);
@@ -2527,12 +2768,20 @@ function scorePost(action,fields={},timeoutMs=45000){
   });
 }
 
-async function loadScoreMeta(silent=true){
+async function loadScoreMeta(silent=true,suppressGlobal=false){
   if(scoreBusy||scoreMetaLoading)return;
   scoreMetaLoading=true;
   scoreMetaState='loading';
   scoreMetaError='';
   renderScore();
+  if(!suppressGlobal){
+    setUnifiedProcess_(
+      '주일 악보 최신 여부 확인 중',
+      '서버에서 현재 등록된 주일 악보가 있는지 확인하고 있습니다.',
+      35,
+      'working'
+    );
+  }
   try{
     const res=await scoreJsonp('meta',30000);
     if(!res||res.ok!==true)throw new Error((res&&res.error)||'악보 정보를 불러오지 못했습니다.');
@@ -2541,12 +2790,28 @@ async function loadScoreMeta(silent=true){
     scoreMetaError='';
     cacheScoreMeta_();
     renderScore();
-    setScoreStatus('');
+    if(!suppressGlobal){
+      setUnifiedProcess_(
+        '주일 악보 확인 완료',
+        SCORE_META?('최신 악보 확인: '+String(SCORE_META.name||'악보')):'서버 확인 완료 · 현재 등록된 주일 악보가 없습니다.',
+        100,
+        'ok'
+      );
+      scheduleGlobalProcessSettle_(1000);
+    }
   }catch(e){
     scoreMetaState='error';
     scoreMetaError=e&&e.message?e.message:String(e);
     renderScore();
-    if(!silent)setScoreStatus(scoreMetaError,'error');
+    if(!suppressGlobal){
+      setUnifiedProcess_(
+        '주일 악보 최신 확인 실패',
+        scoreMetaError+' · 등록된 악보가 없다고 판정하지 않습니다.',
+        currentGlobalProgress_()??72,
+        'error'
+      );
+    }
+    if(!silent)showToast('주일 악보 최신 정보를 확인하지 못했습니다');
   }finally{
     scoreMetaLoading=false;
     renderScore();
@@ -3516,9 +3781,15 @@ async function pollRevision(force=false){
         scheduleScoreMetaWarm_();
         if(!pending.length&&!flushing){
           if(showProgress){
-            // 캐시 revision과 서버 revision이 같으면 추가 다운로드 없이 즉시 완료 시퀀스로 전환합니다.
-            finishSyncProgressFast_('최신 상태 확인 완료','서버와 현재 캐시가 동일합니다.');
-          }else{
+            stopSyncProgress(true);
+            setProcess(
+              '일정 최신 확인 완료 · 찬양 자료 확인 준비',
+              'working',
+              '일정 캐시와 서버가 일치합니다. 악보와 찬양 링크의 최신 상태를 이어서 확인합니다.',
+              60
+            );
+            setTimeout(()=>refreshAuxiliaryData_(true),0);
+          }else if(!auxiliaryRefreshInFlight){
             setProcess('연결 완료','ok');
           }
         }
@@ -3589,7 +3860,7 @@ loadCachedAfterYoutubeLinks_();
 restorePendingAfterYoutubeLinks_();
 renderAfterScore();
 renderAfterYoutubeLinks();
-switchPlaylistSubtab('main');
+switchPlaylistSubtab('main',false);
 if(!isKakaoTalkInApp_())initKakaoShare_();
 applySharedRoute_();
 scheduleAfterYoutubePendingSync_(1500);
