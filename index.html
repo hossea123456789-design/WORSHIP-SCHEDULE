@@ -3843,33 +3843,85 @@ function deleteMember(id){
   closeModal();
 }
 
+
+function renderRoleColorEditor_(){
+  const keyInput=document.getElementById('roleColorValue');
+  const hexInput=document.getElementById('roleColorHex');
+  const picker=document.getElementById('roleColorPicker');
+  const dot=document.getElementById('roleColorDotSlot');
+  const sample=document.getElementById('roleColorSample');
+  if(!keyInput||!hexInput||!picker||!dot||!sample)return;
+  const key=keyInput.value;
+  const hex=roleHex_(key);
+  picker.value=hex;
+  hexInput.value=hex;
+  hexInput.classList.remove('invalid');
+  const role={color_key:key};
+  const kind=roleDisplayClass_(role);
+  const style=roleColorCss_(role);
+  dot.innerHTML=roleDotHtml_(role);
+  sample.className='roleColorSample tag '+kind;
+  sample.removeAttribute('style');
+  if(style)sample.style.cssText=style.slice(8,-1);
+  sample.textContent='역할 표시 예시';
+  document.querySelectorAll('#roleColorPalette .roleColorSwatch').forEach(btn=>{
+    const selected=btn.dataset.colorKey===key;
+    btn.classList.toggle('selected',selected);
+    btn.setAttribute('aria-pressed',String(selected));
+  });
+}
+function selectRoleColorPreset_(key){
+  const preset=ROLE_COLOR_PRESETS.find(p=>p.key===key);
+  if(!preset)return;
+  document.getElementById('roleColorValue').value=preset.key;
+  renderRoleColorEditor_();
+}
+function selectRoleColorCustom_(raw){
+  const hex=normalizeRoleHex_(raw);
+  const input=document.getElementById('roleColorHex');
+  if(!hex){
+    if(input)input.classList.add('invalid');
+    return;
+  }
+  document.getElementById('roleColorValue').value=hex;
+  renderRoleColorEditor_();
+}
 function openRoleForm(id=''){
   const role=id?getRole(id):null;
-
+  const selected=String(role&&role.color_key||'other');
+  const paletteHtml=ROLE_COLOR_PRESETS.map(p=>
+    '<button class="roleColorSwatch" type="button" data-color-key="'+escapeHtml(p.key)+'" onclick="selectRoleColorPreset_(this.dataset.colorKey)" title="'+escapeHtml(p.label)+'" aria-label="'+escapeHtml(p.label)+'"><span class="swatchDot" style="--swatch:'+p.hex+'"></span><span>'+escapeHtml(p.label)+'</span></button>'
+  ).join('');
   openModal(
     id?'역할 수정':'역할 추가',
-    `<div class="formField"><label>역할명</label><input id="roleNameInput" value="${escapeHtml(role?role.role_name:'')}"></div>
-    <div class="formField"><label>색상 분류</label><select id="roleColor">
-      <option value="other">기본</option><option value="leader">인도자 보라</option><option value="piano">피아노 파랑</option><option value="bass">베이스 초록</option><option value="drum">드럼 주황</option><option value="singer">싱어 분홍</option>
-    </select></div>
-    <div class="formField"><label><input type="checkbox" id="roleMulti" ${role&&isActive(role.allow_multiple)?'checked':''}> 여러 명 동시 배정 허용</label></div>
-    <div class="modalActions">
-      ${id?`<button class="dangerBtn" onclick="deleteRole('${id}')">삭제</button>`:''}
-      <button class="primaryBtn" onclick="saveRoleForm('${id}')">저장</button>
-    </div>`
+    '<div class="formField"><label>역할명</label><input id="roleNameInput" value="'+escapeHtml(role?role.role_name:'')+'" placeholder="예: 방송실"></div>'+
+    '<div class="formField"><label>역할 색상</label><div class="hint">팔레트에서 선택하거나 원하는 색상을 직접 지정할 수 있습니다.</div>'+
+    '<input type="hidden" id="roleColorValue" value="'+escapeHtml(selected)+'">'+
+    '<div class="roleColorPalette" id="roleColorPalette">'+paletteHtml+'</div>'+
+    '<div class="roleColorInputs"><input id="roleColorPicker" type="color" aria-label="색상 직접 선택" oninput="selectRoleColorCustom_(this.value)">'+
+    '<input id="roleColorHex" type="text" maxlength="7" placeholder="#6B59E8" aria-label="HEX 색상 코드" oninput="selectRoleColorCustom_(this.value)"></div>'+
+    '<div class="roleColorPreview"><span id="roleColorDotSlot"></span><span class="roleColorLabel">미리보기</span><span id="roleColorSample" class="roleColorSample tag"></span></div></div>'+
+    '<div class="formField"><label><input type="checkbox" id="roleMulti" '+(role&&isActive(role.allow_multiple)?'checked':'')+'> 여러 명 동시 배정 허용</label></div>'+
+    '<div class="modalActions">'+(id?'<button class="dangerBtn" type="button" data-role-id="'+escapeHtml(id)+'" onclick="deleteRole(this.dataset.roleId)">삭제</button>':'')+
+    '<button class="primaryBtn" type="button" data-role-id="'+escapeHtml(id)+'" onclick="saveRoleForm(this.dataset.roleId)">저장</button></div>'
   );
-
-  if(role)document.getElementById('roleColor').value=role.color_key||'other';
+  renderRoleColorEditor_();
 }
-
 function saveRoleForm(id){
   const name=(document.getElementById('roleNameInput').value||'').trim();
   if(!name){showToast('역할명을 입력해주세요');return}
-
+  const code=document.getElementById('roleColorValue').value;
+  if(!ROLE_COLOR_PRESETS.some(p=>p.key===code)&&!normalizeRoleHex_(code)){
+    showToast('올바른 색상을 선택해주세요');return;
+  }
+  const input=document.getElementById('roleColorHex');
+  if(input&&input.classList.contains('invalid')){
+    showToast('HEX 색상 코드를 확인해주세요');return;
+  }
   queueMutation('roleSave',{
     roleId:id,
     name,
-    colorKey:document.getElementById('roleColor').value,
+    colorKey:code,
     allowMultiple:document.getElementById('roleMulti').checked
   });
   closeModal();
