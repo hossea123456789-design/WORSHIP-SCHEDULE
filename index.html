@@ -59,6 +59,7 @@ main{padding:15px 15px 36px}.panel{display:none}.panel.active{display:block}.sec
 .scoreImagePreview:fullscreen img,.scoreImagePreview:-webkit-full-screen img{width:auto;height:auto;max-width:100%;max-height:100%;object-fit:contain;border-radius:0;touch-action:pinch-zoom}
 @media(max-width:520px){.scorePreview{height:46vh;min-height:300px}.scoreImagePreview{height:auto!important;min-height:0!important}.scoreMeta{align-items:flex-start;flex-direction:column}.scoreActions{width:100%}.scoreActions .ghostBtn,.scoreActions .primaryBtn{flex:1;justify-content:center}}
 </style>
+<script src="https://t1.kakaocdn.net/kakao_js_sdk/2.8.2/kakao.min.js" integrity="sha384-zt/G7/KfaRQ9dT/QIkS0ujMtzouJqzuSJcXVQu50x0rl/+mD1dc70AeOejVbMD9E" crossorigin="anonymous"></script>
 </head>
 <body>
 <div class="app">
@@ -104,8 +105,10 @@ main{padding:15px 15px 36px}.panel{display:none}.panel.active{display:block}.sec
 'use strict';
 
 const PLAYLIST_ID='PLDThR_8ShZAFTVEZgp2jtZaha8bThHZXB';
+const APP_PUBLIC_URL='https://hossea123456789-design.github.io/WORSHIP-SCHEDULE/';
+const KAKAO_JAVASCRIPT_KEY='c14b7dd534f10ac1fc266ba52c9e7a56';
 const STORAGE_PREFIX='worship_fast_v3_';
-const APP_VERSION='v3.18.9';
+const APP_VERSION='v3.19.0';
 const BOOTSTRAP_TIMEOUT_MS=25000;
 const MUTATE_TIMEOUT_MS=25000;
 
@@ -393,32 +396,91 @@ async function copyTextFallback_(text,successMessage='복사했습니다'){
   showToast(successMessage);
 }
 
-async function shareOrCopy_(payload,fallbackText,copyMessage){
+function initKakaoShare_(){
+  try{
+    if(!window.Kakao||!Kakao.Share)return false;
+    if(!Kakao.isInitialized())Kakao.init(KAKAO_JAVASCRIPT_KEY);
+    return Kakao.isInitialized();
+  }catch(e){
+    logEvent('ERROR','KAKAO_INIT_FAIL',e&&e.message?e.message:String(e));
+    return false;
+  }
+}
+
+function buildWorshipShareUrl_(tab='week',sub=''){
+  const u=new URL(APP_PUBLIC_URL);
+  u.searchParams.set('v',APP_VERSION);
+  if(tab)u.searchParams.set('tab',tab);
+  if(sub)u.searchParams.set('sub',sub);
+  return u.toString();
+}
+
+function clipKakaoText_(text,max=200){
+  const value=String(text||'').trim();
+  return value.length<=max?value:value.slice(0,Math.max(0,max-1))+'…';
+}
+
+async function nativeShareOrCopy_(payload,fallbackText,copyMessage){
   if(navigator.share){
     try{
       await navigator.share(payload);
-      logEvent('INFO','SHARE_OK','title='+(payload.title||''));
+      logEvent('INFO','NATIVE_SHARE_OK','title='+(payload.title||''));
       return true;
     }catch(e){
       if(e&&e.name==='AbortError'){
-        logEvent('INFO','SHARE_CANCEL','title='+(payload.title||''));
+        logEvent('INFO','NATIVE_SHARE_CANCEL','title='+(payload.title||''));
         return false;
       }
-      logEvent('WARN','SHARE_FAIL','title='+(payload.title||'')+' msg='+(e&&e.message?e.message:e));
+      logEvent('WARN','NATIVE_SHARE_FAIL','title='+(payload.title||'')+' msg='+(e&&e.message?e.message:e));
     }
   }
   await copyTextFallback_(fallbackText,copyMessage);
   return false;
 }
 
+async function kakaoShareText_(text,url,buttonTitle,fallbackTitle,fallbackText){
+  if(initKakaoShare_()){
+    try{
+      Kakao.Share.sendDefault({
+        objectType:'text',
+        text:clipKakaoText_(text,200),
+        link:{
+          mobileWebUrl:url,
+          webUrl:url
+        },
+        buttonTitle:buttonTitle||'WORSHIP 앱에서 보기'
+      });
+      logEvent('INFO','KAKAO_SHARE_OPEN','title='+fallbackTitle);
+      return true;
+    }catch(e){
+      const msg=e&&e.message?e.message:String(e);
+      logEvent('ERROR','KAKAO_SHARE_FAIL',msg);
+      if(/domain|origin|platform|key/i.test(msg)){
+        showToast('카카오 JavaScript SDK 도메인 등록을 확인해주세요');
+      }
+    }
+  }else{
+    logEvent('WARN','KAKAO_SHARE_UNAVAILABLE','sdk/init unavailable');
+  }
+
+  return await nativeShareOrCopy_(
+    {title:fallbackTitle,text:fallbackText,url:url},
+    fallbackText+'\n'+url,
+    '카카오 공유를 열지 못해 내용을 복사했습니다'
+  );
+}
+
 async function sharePrayerGuide_(){
   const el=document.getElementById('prayerCopyText');
   const text=String(el&&el.textContent||'').trim();
   if(!text){showToast('공유할 기도 안내가 없습니다');return}
-  await shareOrCopy_(
-    {title:'찬양팀 기도 순서',text:text},
+  const url=buildWorshipShareUrl_('prayer');
+  await kakaoShareText_(
     text,
-    '공유 기능을 사용할 수 없어 기도 안내를 복사했습니다'
+    url,
+    '기도 순서 보기',
+    '찬양팀 기도 순서',
+    text
   );
 }
 
@@ -428,15 +490,17 @@ async function shareScore_(kind='main'){
   if(!meta||!meta.id){showToast('공유할 악보가 없습니다');return}
 
   const fileName=String(meta.name||'악보');
-  const url=String(meta.openUrl||('https://drive.google.com/file/d/'+encodeURIComponent(meta.id)+'/view'));
   const label=isAfter?'예배 후 찬양 악보':'주일 찬양 악보';
-  const text=label+'\n'+fileName;
-  const fallback=text+'\n'+url;
+  const sub=isAfter?'after':'main';
+  const url=buildWorshipShareUrl_('playlist',sub);
+  const text=label+'\n'+fileName+'\nWORSHIP 앱에서 악보를 바로 확인할 수 있습니다.';
 
-  await shareOrCopy_(
-    {title:label+' - '+fileName,text:text,url:url},
-    fallback,
-    '공유 기능을 사용할 수 없어 악보 링크를 복사했습니다'
+  await kakaoShareText_(
+    text,
+    url,
+    '악보 열기',
+    label+' - '+fileName,
+    label+'\n'+fileName
   );
 }
 function shareMainScore_(){return shareScore_('main')}
@@ -3286,13 +3350,41 @@ document.querySelectorAll('.dateTab').forEach(b=>b.onclick=()=>{
   renderDateSettings();
 });
 
+function activateTab_(tab,scrollBehavior='auto'){
+  const valid=['week','month','prayer','playlist','settings'];
+  const target=valid.includes(tab)?tab:'week';
+  document.querySelectorAll('.navBtn').forEach(btn=>btn.classList.toggle('active',btn.dataset.tab===target));
+  document.querySelectorAll('.panel').forEach(panel=>panel.classList.remove('active'));
+  const panel=document.getElementById('tab-'+target);
+  if(panel)panel.classList.add('active');
+  if(target==='playlist')switchPlaylistSubtab(playlistSubMode);
+  if(scrollBehavior)window.scrollTo({top:0,behavior:scrollBehavior});
+}
+
+function applySharedRoute_(){
+  let params;
+  try{params=new URLSearchParams(location.search)}catch(_){return}
+  const tab=params.get('tab');
+  if(!tab)return;
+
+  if(tab==='playlist'){
+    const sub=params.get('sub')==='after'?'after':'main';
+    playlistSubMode=sub;
+    activateTab_('playlist','auto');
+    switchPlaylistSubtab(sub);
+    setTimeout(()=>{
+      const target=document.getElementById(sub==='after'?'afterScoreArea':'scoreArea');
+      if(target)target.scrollIntoView({block:'start',behavior:'smooth'});
+    },450);
+    return;
+  }
+
+  activateTab_(tab,'auto');
+}
+
 document.querySelectorAll('.navBtn').forEach(b=>b.onclick=()=>{
   if(monthEdit&&b.dataset.tab!=='month'&&!discardMonthEdit())return;
-  document.querySelectorAll('.navBtn').forEach(x=>x.classList.toggle('active',x===b));
-  document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));
-  document.getElementById('tab-'+b.dataset.tab).classList.add('active');
-  if(b.dataset.tab==='playlist')switchPlaylistSubtab(playlistSubMode);
-  window.scrollTo({top:0,behavior:'smooth'});
+  activateTab_(b.dataset.tab,'smooth');
 });
 
 async function pollRevision(force=false){
@@ -3427,6 +3519,8 @@ restorePendingAfterYoutubeLinks_();
 renderAfterScore();
 renderAfterYoutubeLinks();
 switchPlaylistSubtab('main');
+initKakaoShare_();
+applySharedRoute_();
 scheduleAfterYoutubePendingSync_(1500);
 
 // 악보 메타는 일정 revision 확인이 끝난 뒤 순차적으로 자동 확인합니다.
