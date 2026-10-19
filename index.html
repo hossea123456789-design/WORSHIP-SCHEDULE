@@ -113,6 +113,15 @@ main{padding:15px 15px 36px}.panel{display:none}.panel.active{display:block}.sec
 .roleColorPreview .roleColorLabel{font-size:10px;font-weight:850;color:#596174}
 .roleColorPreview .roleColorSample{border-radius:8px;font-size:10px;font-weight:900;padding:6px 9px}
 @media(max-width:380px){.roleColorPalette{grid-template-columns:repeat(5,minmax(0,1fr));gap:5px}}
+
+/* 공개된 운영 정책 링크: 모든 탭의 콘텐츠 아래, 하단 메뉴 위에서 접근 */
+.legalFooter{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;margin:8px 15px 0;padding:18px 12px 2px;text-align:center;border-top:1px solid var(--line);color:#8a91a0}
+.legalFooterLinks{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:8px;font-size:10px;font-weight:850}
+.legalFooter a{color:#656e82;text-decoration:underline;text-underline-offset:3px}
+.legalFooter a:hover{color:#4347a9}
+.legalFooter .legalSep{color:#c0c4ce}
+.legalFooterNote{font-size:9px;line-height:1.55;color:#999faf}
+.legalFooter a:focus-visible{outline:2px solid #777cef;outline-offset:3px;border-radius:3px}
 </style>
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.8.2/kakao.min.js" integrity="sha384-zt/G7/KfaRQ9dT/QIkS0ujMtzouJqzuSJcXVQu50x0rl/+mD1dc70AeOejVbMD9E" crossorigin="anonymous"></script>
 </head>
@@ -151,6 +160,10 @@ main{padding:15px 15px 36px}.panel{display:none}.panel.active{display:block}.sec
 <div class="card settingCard"><div class="cardHead"><h3>진단 로그</h3><button class="primaryBtn" id="copyLog">로그 복사</button></div><div class="cardBody"><div class="logMeta" id="logMeta">최근 동작 기록을 저장합니다.</div><div class="logActions"><button class="ghostBtn" id="clearLog">로그 비우기</button></div></div></div>
 </section>
 </main>
+<footer class="legalFooter" aria-label="운영 정책 및 문의">
+  <div class="legalFooterLinks"><a href="./privacy.html" target="_blank" rel="noopener noreferrer">개인정보처리방침</a><span class="legalSep" aria-hidden="true">·</span><a href="./terms.html" target="_blank" rel="noopener noreferrer">이용약관</a></div>
+  <div class="legalFooterNote">WORSHIP SCHEDULE · 찬양팀 일정 공유 서비스</div>
+</footer>
 <nav class="bottomNav"><button class="navBtn active" data-tab="week"><span>🏠</span>이번주</button><button class="navBtn" data-tab="month"><span>📅</span>월별</button><button class="navBtn" data-tab="prayer"><span>🙏</span>기도</button><button class="navBtn" data-tab="playlist"><span>▶️</span>찬양</button><button class="navBtn" data-tab="settings"><span>⚙️</span>설정</button></nav>
 </div>
 <div class="modalBackdrop" id="backdrop"></div><div class="sheetModal" id="modal"><div class="modalHead"><b id="modalTitle"></b><button class="closeBtn" id="closeModal">×</button></div><div class="modalBody" id="modalBody"></div></div>
@@ -163,7 +176,7 @@ const DEFAULT_HONORIFICS=['집사님','목사님','사모님','권사님','장�
 const APP_PUBLIC_URL='https://hossea123456789-design.github.io/WORSHIP-SCHEDULE/';
 const KAKAO_JAVASCRIPT_KEY='c14b7dd534f10ac1fc266ba52c9e7a56';
 const STORAGE_PREFIX='worship_fast_v3_';
-const APP_VERSION='v3.21.1';
+const APP_VERSION='v3.21.2';
 const BOOTSTRAP_TIMEOUT_MS=25000;
 const MUTATE_TIMEOUT_MS=25000;
 
