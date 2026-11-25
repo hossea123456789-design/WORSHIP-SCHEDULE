@@ -1849,7 +1849,7 @@ async function verifyScheduleItems_(items,ackRevision){
   const ids=items.map(x=>x.id);
   logEvent('INFO','CLOUD_READBACK_START',`ids=${ids.join(',')} revision=${ackRevision||''}`);
   const res=await readApi('readback',{ids:JSON.stringify(ids)},25000,{background:true});
-  if(!res||!res.ok||res.serverVersion!=='v3.22.0'||res.source!=='sheets'||!validScheduleState_(res.data)||Number(res.data.revision)<Number(ackRevision||0))throw Error('DB 재조회 응답 검증 실패');
+  if(!res||!res.ok||res.serverVersion!=='v3.22.0'||res.source!=='sheets'||!validScheduleState_(res.data)||Number(res.data.revision)<Math.max(Number(ackRevision||0),Number(serverState_&&serverState_.revision||0)))throw Error('DB 재조회 응답 검증 실패');
   const verified=new Set(res.verifiedIds||[]);
   // Older receipts are not proof of a verified write. Compare their actual target
   // instead, and never issue another write if the ID is known but unverifiable.
