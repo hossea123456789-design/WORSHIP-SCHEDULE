@@ -157,7 +157,7 @@ main{padding:15px 15px 36px}.panel{display:none}.panel.active{display:block}.sec
 <div class="card settingCard"><div class="cardHead"><h3>멤버 관리</h3><button class="primaryBtn" id="addMember">+ 멤버</button></div><div class="cardBody" id="memberList"></div></div><div class="card settingCard"><div class="cardHead"><h3>호칭 관리</h3><button class="primaryBtn" id="addHonorific" type="button">+ 호칭</button></div><div class="cardBody"><div class="honorificManager" id="honorificList"></div><div class="honorificHint" id="honorificHint">멤버별로 선택한 호칭이 이름 옆 태그로 표시됩니다.</div></div></div>
 <div class="card settingCard"><div class="cardHead"><h3>역할 / 세션 관리</h3><button class="primaryBtn" id="addRole">+ 역할</button></div><div class="cardBody"><div class="roleChips" id="roleList"></div></div></div>
 <div class="card settingCard"><div class="cardHead"><h3>기도 순서 관리</h3><button class="primaryBtn" id="editPrayerOrder">참여자·순서 편집</button></div><div class="cardBody"><div class="roleChips" id="prayerOrderList"></div></div></div>
-<div class="card settingCard"><div class="cardHead"><h3>진단 로그</h3><button class="primaryBtn" id="copyLog">로그 복사</button></div><div class="cardBody"><div class="logMeta" id="logMeta">최근 동작 기록을 저장합니다.</div><div class="logActions"><button class="ghostBtn" id="downloadLog">JSON 내보내기</button><button class="ghostBtn" id="clearLog">로그 비우기</button><button class="ghostBtn" id="reviewConflicts">충돌 검토</button></div></div></div>
+<div class="card settingCard"><div class="cardHead"><h3>진단 로그</h3><button class="primaryBtn" id="copyLog">로그 복사</button></div><div class="cardBody"><div class="logMeta" id="logMeta">최근 동작 기록을 저장합니다.</div><div class="logActions"><button class="ghostBtn" id="downloadLog">JSON 내보내기</button><button class="ghostBtn" id="clearLog">로그 비우기</button><button class="ghostBtn" id="reviewConflicts">충돌 검토</button><button class="ghostBtn" id="reviewLegacyLinks" hidden>이전 링크 검토</button></div></div></div>
 </section>
 </main>
 <footer class="legalFooter" aria-label="운영 정책 및 문의">
@@ -293,47 +293,47 @@ function loadCachedAfterYoutubeLinks_(){
 function cacheAfterYoutubeLinks_(){
   try{safeSet('after_youtube_links_cache',JSON.stringify({links:AFTER_YOUTUBE_LINKS.slice(),cachedAt:Date.now()}))}catch(e){}
 }
-function getPendingAfterYoutubeLinks_(){
-  try{
-    const x=JSON.parse(safeGet('after_youtube_links_pending')||'null');
-    if(!x||!Array.isArray(x.links))return null;
-    return {
-      links:normalizeAfterYoutubeClient_(x.links),
-      createdAt:Number(x.createdAt||0),
-      attempts:Number(x.attempts||0)
-    };
-  }catch(e){}
-  return null;
+function getLinkQueue_(){try{const q=JSON.parse(safeGet('after_links_ops_v2')||'[]');return Array.isArray(q)?q:[]}catch(_){return []}}
+
+function legacyLinkPending_(){try{const q=JSON.parse(safeGet('after_youtube_links_pending')||'null');return q&&Array.isArray(q.links)?q:null}catch(_){return null}}
+
+function getPendingAfterYoutubeLinks_(){return getLinkQueue_()[0]||legacyLinkPending_()}
+
+function applyLinkOps_(base,ops){
+  let result=base.slice();
+  for(const op of ops){const removed=new Set(op.removes);result=[...new Set([...result.filter(x=>!removed.has(x)),...op.adds])]}
+  return result;
 }
-function setPendingAfterYoutubeLinks_(links,attempts=0){
-  const normalized=normalizeAfterYoutubeClient_(links);
-  safeSet('after_youtube_links_pending',JSON.stringify({
-    links:normalized,
-    createdAt:Date.now(),
-    attempts:Number(attempts||0)
-  }));
-  return normalized;
-}
-function clearPendingAfterYoutubeLinks_(){
-  safeRemove('after_youtube_links_pending');
-  clearTimeout(afterLinksRetryTimer);
-  afterLinksRetryTimer=null;
-}
+
 function restorePendingAfterYoutubeLinks_(){
-  const pending=getPendingAfterYoutubeLinks_();
-  if(!pending)return false;
-  AFTER_YOUTUBE_LINKS=pending.links.slice();
-  afterLinksState='pending';
-  cacheAfterYoutubeLinks_();
-  return true;
+  const legacy=legacyLinkPending_(),q=getLinkQueue_();
+  if(!legacy&&!q.length)return false;
+  if(legacy)AFTER_YOUTUBE_LINKS=normalizeAfterYoutubeClient_(legacy.links);
+  else AFTER_YOUTUBE_LINKS=applyLinkOps_(AFTER_YOUTUBE_LINKS,q);
+  afterLinksState='pending';return true;
 }
+
+async function reviewLegacyLinks_(){
+  const legacy=legacyLinkPending_();if(!legacy){showToast('이전 버전 링크 보류 내역이 없습니다');return}
+  if(!navigator.onLine){showToast('서버 연결 후 검토해주세요');return}
+  try{
+    const r=await scoreJsonp('afterLinks',30000);
+    if(!r||!r.ok||!Array.isArray(r.links)||r.version!=='v3.22.0')throw Error('악보 서버 업데이트 필요');
+    if(!confirm('이전 버전에서 보류한 링크 '+legacy.links.length+'개를 최신 서버 목록에 추가할까요? 다른 기기에서 추가한 링크는 삭제하지 않습니다. 삭제가 필요하면 최신 목록에서 직접 삭제해주세요.'))return;
+    const adds=normalizeAfterYoutubeClient_(legacy.links).filter(x=>!r.links.includes(x));
+    const q=getLinkQueue_();
+    if(adds.length)q.push({id:'link_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2),adds,removes:[],attempts:0});
+    if(!safeSet('after_links_ops_v2',JSON.stringify(q)))throw Error('기기 저장 실패');
+    safeRemove('after_youtube_links_pending');
+    AFTER_YOUTUBE_LINKS=applyLinkOps_(r.links,q);renderAfterYoutubeLinks();
+    if(q.length)syncPendingAfterYoutubeLinks_(false);else loadAfterYoutubeLinks(false);
+  }catch(e){showToast(String(e.message||e))}
+}
+
 function scheduleAfterYoutubePendingSync_(delay=1800){
   clearTimeout(afterLinksRetryTimer);
-  if(!getPendingAfterYoutubeLinks_()||afterLinksSaving||!navigator.onLine)return;
-  afterLinksRetryTimer=setTimeout(()=>{
-    afterLinksRetryTimer=null;
-    syncPendingAfterYoutubeLinks_(true);
-  },delay);
+  if(!getLinkQueue_().length||afterLinksSaving||!navigator.onLine)return;
+  afterLinksRetryTimer=setTimeout(()=>{afterLinksRetryTimer=null;syncPendingAfterYoutubeLinks_(true)},delay);
 }
 
 function scheduleScoreMetaWarm_(){
@@ -458,7 +458,7 @@ function enqueueItems_(items){
 
 function worshipTarget_(d,m){
   const p=m.payload||{},str=x=>String(x==null?'':x),ids=x=>[...new Set((x||[]).map(str).filter(Boolean))],arr=k=>Array.isArray(d[k])?d[k]:[],by=(a,b)=>Number(a.sort_order||0)-Number(b.sort_order||0);
-  const day=x=>{const v=str(x);return /^\d{4}-\d{2}-\d{2}/.test(v)?v.slice(0,10):v};
+  const day=x=>normalizeDateKey(x)||normalizeMonthKey(x)||str(x);
   const active=x=>x===true||['true','1','y','yes'].includes(str(x).toLowerCase());
   const member=id=>arr('members').find(x=>str(x.member_id)===str(id));
   const role=id=>arr('roles').find(x=>str(x.role_id)===str(id));
@@ -618,7 +618,7 @@ function readLogs(){try{const x=JSON.parse(safeGet('diagnostic_log')||'[]');retu
 function writeLogs(a){safeSet('diagnostic_log',JSON.stringify(a.slice(-LOG_LIMIT)))}
 function logEvent(level,event,detail){
   const a=readLogs();
-  a.push({time:new Date().toISOString(),level:String(level||'INFO'),event:String(event||''),detail:detail==null?'':String(detail).replace(/https?:\/\/[^\s]+/g,'[url]').replace(/(?:token|password|secret|authorization)\s*[:=]\s*[^\s,;]+/gi,'[redacted]').slice(0,1600)});
+  a.push({time:new Date().toISOString(),level:String(level||'INFO'),event:String(event||''),detail:detail==null?'':String(detail).replace(/https?:\/\/[^\s]+/g,'[url]').replace(/(?:name|fileName)=.*?(?=\s(?:size|type|msg)=|$)/gi,'name=[redacted]').replace(/(?:token|password|secret|authorization)\s*[:=]\s*[^\s,;]+/gi,'[redacted]').slice(0,1600)});
   writeLogs(a);
   updateLogMeta();
 }
@@ -861,6 +861,7 @@ function clearConnectionError(){const b=document.getElementById('errorBanner');i
 function updateLogMeta(){
   const el=document.getElementById('logMeta');if(!el)return;
   const a=readLogs();const lastErr=[...a].reverse().find(x=>x.level==='ERROR');
+  const oldLinks=document.getElementById('reviewLegacyLinks');if(oldLinks)oldLinks.hidden=!legacyLinkPending_();
   el.textContent=`앱 ${APP_VERSION} · 일정 서버 ${serverVersions_.schedule} · 악보 서버 ${serverVersions_.score} · 대기 ${pending.length}건 · 충돌 ${getConflicts_().length}건 · 로그 ${a.length}건 · 상태: ${processStatus}`+(lastErr?` · 마지막 오류: ${lastErr.event}`:'');
 }
 function diagnosticContext_(){
@@ -1508,6 +1509,7 @@ function currentGlobalProgress_(){
 }
 
 function setUnifiedProcess_(text,detail='',progress=null,type='working'){
+  if(pending.length||flushing)return;
   stopSyncProgress(false);
   clearTimeout(globalProcessSettleTimer);
   globalProcessSettleTimer=null;
@@ -1527,6 +1529,7 @@ function scheduleGlobalProcessSettle_(delay=1200,detail=''){
   clearTimeout(globalProcessSettleTimer);
   globalProcessSettleTimer=setTimeout(()=>{
     globalProcessSettleTimer=null;
+    if(pending.length||getPendingAfterYoutubeLinks_()||getConflicts_().length)return;
     if(globalOperationBusy_()){
       scheduleGlobalProcessSettle_(280,detail);
       return;
@@ -1691,7 +1694,7 @@ async function bootstrap(showLoading=true,silentFailure=false){
   readInFlight=true;
   const started=performance.now();
   const hadState=!!STATE;
-  if(!silentFailure){
+  if(!silentFailure&&!pending.length){
     startSyncProgress(hadState);
     clearConnectionError();
   }
@@ -1723,7 +1726,7 @@ async function bootstrap(showLoading=true,silentFailure=false){
     if(!silentFailure)setSyncProgress(98,'화면 반영 중',hadState,'월별 편성·기도·설정 화면에 최신 데이터를 적용하고 있습니다.');
     renderSynced_();
     clearConnectionError();
-    if(!silentFailure){
+    if(!silentFailure&&!pending.length){
       stopSyncProgress(true);
       setProcess(
         '일정 확인 완료 · 찬양 자료 확인 준비',
@@ -1732,9 +1735,9 @@ async function bootstrap(showLoading=true,silentFailure=false){
         60
       );
       setTimeout(()=>refreshAuxiliaryData_(true),0);
-    }else{
+    }else if(!pending.length){
       scheduleScoreMetaWarm_();
-    }
+    }else{stopSyncProgress(true);setProcess('저장 대기 중','working')}
     logEvent('INFO',silentFailure?'BOOTSTRAP_BG_OK':'BOOTSTRAP_OK',`ms=${Math.round(performance.now()-started)} revision=${STATE.revision}`);
     return true;
   }catch(e){
@@ -1856,6 +1859,7 @@ async function verifyScheduleItems_(items,ackRevision){
 
 async function flushQueue(){
   if(flushing||!pending.length||readInFlight||!STATE)return;
+  clearTimeout(retryTimer);retryTimer=null;
   if(!navigator.onLine){setProcess('오프라인 · 저장 보류','offline');return}
   if(!scheduleServerReady_()){
     setProcess('일정 서버 업데이트 필요 · 저장 보류','error','서버 검증 기능 배포 후 자동 저장합니다.');
@@ -1920,7 +1924,7 @@ async function flushQueue(){
     saveQueue();
     setProcess('저장 보류 · 재시도 예정','error',msg);
     const delay=Math.min(60000,1500*Math.pow(2,Math.min(6,Math.max(0,Number(first.attempts)-1))));
-    clearTimeout(retryTimer);retryTimer=setTimeout(()=>{logEvent('INFO','CLOUD_RETRY_START',`pending=${pending.length}`);flushQueue()},delay);
+    clearTimeout(retryTimer);retryTimer=setTimeout(()=>{retryTimer=null;logEvent('INFO','CLOUD_RETRY_START',`pending=${pending.length}`);flushQueue()},delay);
   }finally{
     flushing=false;
     if(continueNow&&pending.length){clearTimeout(retryTimer);retryTimer=setTimeout(flushQueue,50)}
@@ -2230,7 +2234,7 @@ function setMonthDraftAssignment(date,roleId,memberIds){
   const key=monthDraftKey(date,roleId);
   monthDraft[key]={
     id:'mu_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2),
-    base:monthDraft[key]&&Object.prototype.hasOwnProperty.call(monthDraft[key],'base')?monthDraft[key].base:worshipTarget_(STATE,{type:'assignmentSet',payload:{date,roleId}}),
+    base:monthDraft[key]&&Object.prototype.hasOwnProperty.call(monthDraft[key],'base')?monthDraft[key].base:worshipTarget_(modalBaseState_||STATE,{type:'assignmentSet',payload:{date,roleId}}),
     date:String(date),
     roleId:String(roleId),
     memberIds:[...new Set((memberIds||[]).map(String).filter(Boolean))]
@@ -2534,107 +2538,49 @@ function setAfterLinksGlobalProgress_(text,detail,progress,type='working'){
 }
 
 async function syncPendingAfterYoutubeLinks_(silent=true){
-  const pending=getPendingAfterYoutubeLinks_();
-  if(!pending)return true;
-  if(afterLinksSaving)return false;
-
-  afterLinksSaving=true;
-  const generation=++afterLinksGeneration;
-  AFTER_YOUTUBE_LINKS=pending.links.slice();
-  afterLinksState='pending';
-  cacheAfterYoutubeLinks_();
-  renderAfterYoutubeLinks();
-
-  setAfterLinksGlobalProgress_(
-    '예배 후 찬양 링크 저장 준비',
-    '저장할 링크 목록을 기기에 안전하게 보관했습니다.',
-    15
-  );
-
-  try{
-    setAfterLinksGlobalProgress_(
-      '예배 후 찬양 링크 서버 확인',
-      '팀 공용 저장소 상태를 확인하고 있습니다.',
-      30
-    );
-    const health=await scoreJsonp('health',30000);
-    if(!health||health.ok!==true)throw new Error((health&&health.error)||'악보 서버 상태를 확인하지 못했습니다.');
-    if(health.afterLinksStorage!=='drive+properties'){
-      throw new Error('예배 후 찬양 링크 영구 저장 서버(v3.12.9) 업데이트가 필요합니다.');
-    }
-
-    setAfterLinksGlobalProgress_(
-      '예배 후 찬양 링크 저장 중',
-      '팀 공용 서버와 Drive 백업 저장소에 기록하고 있습니다.',
-      55
-    );
-    const res=await scorePost('afterLinksSet',{
-      linksJson:JSON.stringify(pending.links)
-    },30000);
-    if(!res||res.ok!==true)throw new Error((res&&res.error)||'YouTube 목록 저장에 실패했습니다.');
-    if(!sameAfterYoutubeLinks_(res.links,pending.links)){
-      throw new Error('서버 저장 응답이 요청한 링크 목록과 일치하지 않습니다.');
-    }
-
-    setAfterLinksGlobalProgress_(
-      '예배 후 찬양 링크 저장 확인 중',
-      '저장 완료 처리 전에 서버에서 다시 읽어 실제 저장값을 검증합니다.',
-      82
-    );
-    const verify=await scoreJsonp('afterLinks',30000);
-    if(!verify||verify.ok!==true)throw new Error((verify&&verify.error)||'저장 후 재확인에 실패했습니다.');
-    if(!sameAfterYoutubeLinks_(verify.links,pending.links)){
-      throw new Error('저장 후 서버 재조회 값이 일치하지 않습니다.');
-    }
-
-    if(generation!==afterLinksGeneration){
-      throw new Error('더 최신 링크 변경이 있어 이전 저장 결과를 폐기했습니다.');
-    }
-
-    const confirmed=normalizeAfterYoutubeClient_(verify.links||[]);
-    AFTER_YOUTUBE_LINKS=confirmed;
-    afterLinksState='loaded';
-    cacheAfterYoutubeLinks_();
-    clearPendingAfterYoutubeLinks_();
-    logEvent('INFO','AFTER_LINKS_SYNC_VERIFIED','count='+confirmed.length);
-
-    setAfterLinksGlobalProgress_(
-      '예배 후 찬양 링크 저장 완료',
-      '서버 재조회까지 일치 확인 완료 · 앱을 다시 열어도 유지됩니다.',
-      100,
-      'ok'
-    );
-    if(!silent)showToast('예배 후 찬양 링크 저장 완료');
-
-    setTimeout(()=>{
-      if(!afterLinksSaving&&!getPendingAfterYoutubeLinks_()&&!readInFlight&&!flushing){
-        setProcess('연결 완료','ok');
-      }
-    },1400);
-    return true;
-  }catch(e){
-    const msg=e&&e.message?e.message:String(e);
-    const retry=setPendingAfterYoutubeLinks_(pending.links,pending.attempts+1);
-    AFTER_YOUTUBE_LINKS=retry.slice();
+  if(legacyLinkPending_()){
     afterLinksState='pending';
-    cacheAfterYoutubeLinks_();
-    logEvent('WARN','AFTER_LINKS_SYNC_PENDING','attempt='+(pending.attempts+1)+' msg='+msg);
-
-    const needsDeploy=/v3\.12\.9|영구 저장 서버/.test(msg);
-    setAfterLinksGlobalProgress_(
-      needsDeploy?'예배 후 찬양 링크 서버 업데이트 필요':'예배 후 찬양 링크 저장 대기',
-      needsDeploy
-        ?'새 저장 방식이 서버에 배포되기 전까지 완료로 표시하지 않습니다.'
-        :'서버 재확인이 끝나지 않았습니다. 링크는 기기에 보관했고 자동으로 다시 시도합니다.',
-      needsDeploy?65:82,
-      needsDeploy?'error':'working'
-    );
-    if(!silent)showToast(needsDeploy?'악보 서버 업데이트 후 자동 저장됩니다':'서버 확인 후 자동으로 다시 저장합니다');
-    scheduleAfterYoutubePendingSync_(needsDeploy?30000:5000);
+    logEvent('WARN','LINK_LEGACY_REVIEW_REQUIRED','previous full-list save retained');
+    return false;
+  }
+  const queue=getLinkQueue_(),op=queue[0];
+  if(!op)return true;
+  if(afterLinksSaving||!navigator.onLine)return false;
+  afterLinksSaving=true;++afterLinksGeneration;afterLinksState='pending';
+  renderAfterYoutubeLinks();
+  let retry=0,next=false;
+  try{
+    setAfterLinksGlobalProgress_('예배 후 찬양 링크 서버 확인','링크 변경분을 안전하게 병합합니다.',30);
+    const health=await scoreJsonp('health',30000);
+    if(!health||health.ok!==true||health.linkPatchVersion!==2||health.version!=='v3.22.0')throw Error('악보 서버 v3.22.0 업데이트 필요');
+    setAfterLinksGlobalProgress_('예배 후 찬양 링크 저장 중','추가·삭제 변경분만 저장합니다.',55);
+    logEvent('INFO','CLOUD_SAVE_START',`scope=links id=${op.id} attempt=${Number(op.attempts||0)+1}`);
+    const res=await scorePost('afterLinksSet',{operationId:op.id,addsJson:JSON.stringify(op.adds),removesJson:JSON.stringify(op.removes)},30000);
+    if(!res||!res.ok||!(res.verifiedOperationIds||[]).includes(op.id))throw Error('링크 저장 응답 검증 실패');
+    logEvent('INFO','CLOUD_SAVE_ACK',`scope=links id=${op.id} revision=${res.linksRevision}`);
+    setAfterLinksGlobalProgress_('예배 후 찬양 링크 저장 검증 중','영구 저장소에서 다시 확인합니다.',82);
+    const verify=await scoreJsonp('afterLinks',30000);
+    if(!verify||!verify.ok||!Array.isArray(verify.links)||!(verify.verifiedOperationIds||[]).includes(op.id)||Number(verify.linksRevision)<Number(res.linksRevision))throw Error('링크 DB 재조회 검증 실패');
+    const remaining=getLinkQueue_().filter(x=>x.id!==op.id);
+    if(!safeSet('after_links_ops_v2',JSON.stringify(remaining)))throw Error('링크 대기열 갱신 실패');
+    AFTER_YOUTUBE_LINKS=applyLinkOps_(normalizeAfterYoutubeClient_(verify.links),remaining);
+    afterLinksState=remaining.length?'pending':'loaded';cacheAfterYoutubeLinks_();
+    logEvent('INFO','CLOUD_READBACK_OK',`scope=links id=${op.id} revision=${verify.linksRevision} pending=${remaining.length}`);
+    next=remaining.length>0;
+    if(!next){setAfterLinksGlobalProgress_('예배 후 찬양 링크 저장 완료','DB 재조회 검증 완료',100,'ok');if(!silent)showToast('예배 후 찬양 링크 저장 완료')}
+    return !next;
+  }catch(e){
+    const latest=getLinkQueue_();const item=latest.find(x=>x.id===op.id);if(item)item.attempts=Number(item.attempts||0)+1;
+    safeSet('after_links_ops_v2',JSON.stringify(latest));
+    retry=Math.min(60000,1500*Math.pow(2,Math.min(6,Number(item&&item.attempts||1))));
+    const msg=String(e.message||e);
+    logEvent('WARN','CLOUD_SAVE_FAIL',`scope=links id=${op.id} msg=${msg}`);
+    setAfterLinksGlobalProgress_('예배 후 찬양 링크 저장 보류',msg,60,'error');
+    if(!silent)showToast('링크 변경을 기기에 보관했습니다');
     return false;
   }finally{
-    afterLinksSaving=false;
-    renderAfterYoutubeLinks();
+    afterLinksSaving=false;renderAfterYoutubeLinks();
+    if(next||retry)scheduleAfterYoutubePendingSync_(next?100:retry);
   }
 }
 
@@ -2668,7 +2614,8 @@ async function loadAfterYoutubeLinks(silent=true,suppressGlobal=false){
       return;
     }
 
-    AFTER_YOUTUBE_LINKS=normalizeAfterYoutubeClient_(res.links||[]);
+    if(!Array.isArray(res.links))throw Error('링크 데이터 형식 오류');
+    AFTER_YOUTUBE_LINKS=normalizeAfterYoutubeClient_(res.links);
     afterLinksState='loaded';
     cacheAfterYoutubeLinks_();
     if(!suppressGlobal){
@@ -2700,22 +2647,17 @@ async function loadAfterYoutubeLinks(silent=true,suppressGlobal=false){
 }
 
 async function saveAfterYoutubeLinks_(next,previous){
-  if(afterLinksSaving)return false;
-
-  ++afterLinksGeneration;
-  AFTER_YOUTUBE_LINKS=setPendingAfterYoutubeLinks_(next,0);
-  afterLinksState='pending';
-  cacheAfterYoutubeLinks_();
-  renderAfterYoutubeLinks();
-
-  setAfterLinksGlobalProgress_(
-    '예배 후 찬양 링크 저장 대기',
-    '서버에 저장하고 다시 읽어 검증한 뒤에만 완료 처리합니다.',
-    8
-  );
-
-  return await syncPendingAfterYoutubeLinks_(false);
+  if(legacyLinkPending_()){showToast('설정의 이전 링크 검토를 먼저 진행해주세요');return false}
+  const q=getLinkQueue_(),normalized=normalizeAfterYoutubeClient_(next);
+  const op={id:'link_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2),adds:normalized.filter(x=>!previous.includes(x)),removes:previous.filter(x=>!normalized.includes(x)),attempts:0};
+  if(!op.adds.length&&!op.removes.length)return false;
+  if(!safeSet('after_links_ops_v2',JSON.stringify([...q,op]))){showToast('기기 저장 실패 · 입력을 유지합니다');return false}
+  ++afterLinksGeneration;AFTER_YOUTUBE_LINKS=normalized;afterLinksState='pending';cacheAfterYoutubeLinks_();renderAfterYoutubeLinks();
+  logEvent('INFO','LOCAL_SAVE_OK',`scope=links id=${op.id} pending=${q.length+1}`);
+  if(!afterLinksSaving&&navigator.onLine)syncPendingAfterYoutubeLinks_(false);
+  return true;
 }
+
 async function addAfterYoutubeLinks(){
   const input=document.getElementById('afterYoutubeInput');
   if(!input||afterLinksSaving)return;
@@ -2727,8 +2669,7 @@ async function addAfterYoutubeLinks(){
   const previous=AFTER_YOUTUBE_LINKS.slice();
   const next=normalizeAfterYoutubeClient_(previous.concat(parsed.map(function(x){return x.canonical})));
   if(next.length===previous.length){showToast('이미 등록된 링크입니다');return}
-  input.value='';
-  await saveAfterYoutubeLinks_(next,previous);
+  if(await saveAfterYoutubeLinks_(next,previous))input.value='';
 }
 async function removeAfterYoutubeLink(index){
   if(afterLinksSaving)return;
@@ -2999,6 +2940,8 @@ async function loadAfterScoreMeta(silent=true,suppressGlobal=false){
   try{
     const res=await scoreJsonp('afterMeta',30000);
     if(!res||res.ok!==true)throw new Error((res&&res.error)||'예배 후 악보 정보를 불러오지 못했습니다.');
+    if(!Object.prototype.hasOwnProperty.call(res,'file')||(res.file!==null&&(!res.file||!res.file.id)))throw Error('악보 데이터 형식 오류');
+    if(afterScoreBusy)return;
     AFTER_SCORE_META=res.file||null;
     afterScoreMetaState='loaded';
     afterScoreMetaError='';
@@ -3050,74 +2993,85 @@ async function afterScoreChunkPostWithRetry(fields){
   }
   throw lastError||new Error('예배 후 악보 업로드 조각 전송에 실패했습니다.');
 }
-async function uploadAfterScoreFile(file){
-  if(!file||afterScoreBusy)return;
+async function verifyScoreUpload_(action,opId,expectedId){
+  logEvent('INFO','CLOUD_READBACK_START',`scope=score action=${action} id=${opId}`);
+  const r=await scoreJsonp(action,30000),file=r&&r.file;
+  if(!r||!r.ok||r.version!=='v3.22.0'||!file||file.operationId!==opId||(expectedId&&String(file.id)!==String(expectedId)))throw Error('악보 저장 검증 실패 · 현재 파일과 요청 ID가 일치하지 않습니다.');
+  logEvent('INFO','CLOUD_READBACK_OK',`scope=score action=${action} id=${opId}`);
+  return file;
+}
+
+async function uploadWorshipScore_(file,after){
+  if(!file||(after?afterScoreBusy:scoreBusy))return;
   const ext=(file.name.split('.').pop()||'').toLowerCase();
-  const mime=String(file.type||'').toLowerCase();
-  const allowedExt=['pdf','ppt','pptx','doc','docx','jpg','jpeg','png'];
-  const allowedMime=['application/pdf','application/vnd.ms-powerpoint','application/vnd.openxmlformats-officedocument.presentationml.presentation','application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document','image/jpeg','image/png'];
-  if(!allowedExt.includes(ext)&&!allowedMime.includes(mime)){showToast('PDF · PPT · DOC · JPG · PNG 파일만 올릴 수 있습니다');return}
-  if(file.size>25*1024*1024){showToast('악보 파일은 25MB 이하만 가능합니다');return}
-  if(AFTER_SCORE_META&&!confirm('기존 예배 후 악보는 삭제되고 이 파일로 교체됩니다. 계속할까요?'))return;
-  afterScoreBusy=true;renderAfterScore();
-  const startedAt=performance.now();let uploaded=0;
-  updateAfterScoreProgress(0,file.size,startedAt,'업로드 준비 중');setAfterScoreStatus('예배 후 악보 서버 확인 중…','working');
+  if(!['pdf','ppt','pptx','doc','docx','jpg','jpeg','png'].includes(ext)){showToast('PDF · PPT · DOC · JPG · PNG 파일만 올릴 수 있습니다');return}
+  if(file.size<=0||file.size>25*1024*1024){showToast('악보 파일은 25MB 이하만 가능합니다');return}
+  if(!navigator.onLine){showToast('악보 파일 업로드는 인터넷 연결 후 가능합니다');return}
+  const metaAction=after?'afterMeta':'meta',prefix=after?'afterUpload':'upload',opId='upload_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2);
+  const render=after?renderAfterScore:renderScore,progress=after?updateAfterScoreProgress:updateScoreProgress,status=after?setAfterScoreStatus:setScoreStatus,hide=after?hideAfterScoreProgress:hideScoreProgress,fail=after?failAfterScoreProgress:failScoreProgress;
+  const cache=after?cacheAfterScoreMeta_:cacheScoreMeta_;
+  const updateMeta=value=>{if(after){AFTER_SCORE_META=value;afterScoreMetaState='loaded';afterScoreMetaError=''}else{SCORE_META=value;scoreMetaState='loaded';scoreMetaError=''}cache()};
+  const start=performance.now();
+  let submitted=false,completed=false;
+  if(after)afterScoreBusy=true;else scoreBusy=true;render();
   try{
-    await ensureAfterScoreApiReady();setAfterScoreStatus('Drive 업로드 준비 중…','working');
+    progress(0,file.size,start,'업로드 준비 중');status('악보 서버 확인 중…','working');
+    const health=await scoreJsonp('health',30000);
+    if(!health||!health.ok||health.version!=='v3.22.0'||health.scoreCompareAndSwap!==true)throw Error('악보 서버 v3.22.0 업데이트 필요');
+    const meta=await scoreJsonp(metaAction,30000);
+    if(!meta||!meta.ok||meta.version!=='v3.22.0'||!Object.prototype.hasOwnProperty.call(meta,'file'))throw Error('현재 악보 확인 실패');
+    updateMeta(meta.file||null);
+    if(meta.file&&!confirm('현재 등록된 악보를 이 파일로 교체할까요?'))return;
+    const fields={operationId:opId,expectedFileId:String(meta.file&&meta.file.id||''),fileName:file.name,mimeType:file.type||'',totalSize:file.size};
+    const uploadChunk=after?afterScoreChunkPostWithRetry:scoreChunkPostWithRetry;
+    let ack;
+    logEvent('INFO','CLOUD_SAVE_START',`scope=score id=${opId} size=${file.size} kind=${after?'after':'main'}`);
     if(file.size<=4*1024*1024){
-      updateAfterScoreProgress(Math.max(1,Math.floor(file.size*.08)),file.size,startedAt,'파일 읽는 중…');
-      const directBase64=await blobToBase64(file);
-      updateAfterScoreProgress(Math.max(1,Math.floor(file.size*.25)),file.size,startedAt,'Drive에 직접 저장 중…');
-      try{
-        const directRes=await scorePost('afterUploadDirect',{fileName:file.name,mimeType:file.type||'',totalSize:file.size,dataBase64:directBase64},60000);
-        if(directRes&&directRes.complete&&directRes.file){
-          AFTER_SCORE_META=directRes.file;afterScoreMetaState='loaded';afterScoreMetaError='';cacheAfterScoreMeta_();
-          updateAfterScoreProgress(file.size,file.size,startedAt,'업로드 완료');renderAfterScore();setAfterScoreStatus('업로드 완료');showToast('예배 후 악보를 교체했습니다');hideAfterScoreProgress(1800);return;
+      const dataBase64=await blobToBase64(file);
+      progress(Math.floor(file.size*.25),file.size,start,'Drive에 저장 중');
+      submitted=true;
+      ack=await scorePost(prefix+'Direct',{...fields,dataBase64},60000);
+    }else{
+      const session=await scorePost(prefix+'Start',fields,30000);
+      if(session.complete&&session.file)ack=session;
+      else{
+        const uploadId=String(session.uploadId||''),chunkSize=Math.max(256*1024,Number(session.chunkSize||768*1024));
+        if(!uploadId)throw Error('업로드 세션 생성 실패');
+        let uploaded=0;
+        while(uploaded<file.size){
+          const end=Math.min(file.size,uploaded+chunkSize);
+          const dataBase64=await blobToBase64(file.slice(uploaded,end));
+          submitted=true;
+          ack=await uploadChunk({uploadId,start:uploaded,end:end-1,totalSize:file.size,dataBase64});
+          uploaded=Math.max(end,Math.min(file.size,Number(ack.receivedBytes||end)));
+          progress(uploaded,file.size,start,ack.complete?'저장 검증 중':'Drive에 업로드 중');
         }
-        throw new Error('직접 저장 완료 응답을 받지 못했습니다.');
-      }catch(directErr){
-        const directMsg=String(directErr&&directErr.message?directErr.message:directErr||'');
-        if(/scope|permission|authorization|권한|ACCESS_TOKEN_SCOPE_INSUFFICIENT|insufficientPermissions/i.test(directMsg))throw directErr;
-        logEvent('WARN','AFTER_SCORE_DIRECT_RECOVERY',directMsg);
-        try{
-          const metaRes=await scoreJsonp('afterMeta',30000);
-          const recovered=metaRes&&metaRes.file;
-          if(recovered&&String(recovered.name||'')===String(file.name||'')&&Number(recovered.size||0)===Number(file.size||0)){
-            AFTER_SCORE_META=recovered;afterScoreMetaState='loaded';afterScoreMetaError='';cacheAfterScoreMeta_();
-            updateAfterScoreProgress(file.size,file.size,startedAt,'업로드 완료');renderAfterScore();setAfterScoreStatus('업로드 완료');showToast('예배 후 악보를 교체했습니다');hideAfterScoreProgress(1800);return;
-          }
-        }catch(metaErr){}
-        setAfterScoreStatus('직접 저장 실패 · 분할 업로드로 재시도 중…','working');
       }
     }
-    const startRes=await scorePost('afterUploadStart',{fileName:file.name,mimeType:file.type||'',totalSize:file.size},30000);
-    const uploadId=String(startRes.uploadId||'');
-    const chunkSize=Math.max(256*1024,Number(startRes.chunkSize||768*1024));
-    if(!uploadId)throw new Error('업로드 세션을 만들지 못했습니다.');
-    setAfterScoreStatus('Drive에 분할 업로드 중…','working');
-    let lastRes=null;
-    while(uploaded<file.size){
-      const endExclusive=Math.min(file.size,uploaded+chunkSize);
-      const blob=file.slice(uploaded,endExclusive);
-      const dataBase64=await blobToBase64(blob);
-      lastRes=await afterScoreChunkPostWithRetry({uploadId:uploadId,start:uploaded,end:endExclusive-1,totalSize:file.size,dataBase64:dataBase64});
-      const acknowledged=Number(lastRes.receivedBytes||endExclusive);
-      uploaded=Math.max(endExclusive,Math.min(file.size,acknowledged));
-      updateAfterScoreProgress(uploaded,file.size,startedAt,lastRes.complete?'마무리 중…':'Drive에 업로드 중');
-    }
-    if(!lastRes||!lastRes.complete||!lastRes.file)throw new Error('파일 전송은 끝났지만 Drive 저장 완료 응답을 받지 못했습니다.');
-    AFTER_SCORE_META=lastRes.file;afterScoreMetaState='loaded';afterScoreMetaError='';cacheAfterScoreMeta_();
-    updateAfterScoreProgress(file.size,file.size,startedAt,'업로드 완료');renderAfterScore();setAfterScoreStatus('업로드 완료');showToast('예배 후 악보를 교체했습니다');hideAfterScoreProgress(1800);
+    if(!ack||!ack.complete||!ack.file)throw Error('파일 저장 완료 응답 누락');
+    logEvent('INFO','CLOUD_SAVE_ACK',`scope=score id=${opId}`);
+    status('서버 저장 검증 중…','working');
+    const verified=await verifyScoreUpload_(metaAction,opId,ack.file.id);
+    updateMeta(verified);completed=true;
   }catch(e){
-    const msg=e&&e.message?e.message:String(e);
-    logEvent('ERROR','AFTER_SCORE_UPLOAD_FAIL','name='+file.name+' size='+file.size+' msg='+msg);
-    failAfterScoreProgress(msg);setAfterScoreStatus(msg,'error');showToast('예배 후 악보 저장 실패');
+    // A lost response is recovered only by this exact operation ID.
+    // A matching file name/size alone is not proof and must not trigger another write.
+    if(submitted){
+      try{const verified=await verifyScoreUpload_(metaAction,opId,'');updateMeta(verified);completed=true}catch(_){}
+    }
+    if(!completed){
+      const msg=String(e.message||e);logEvent('ERROR','CLOUD_READBACK_FAIL',`scope=score id=${opId} msg=${msg}`);
+      fail(msg);status(msg,'error');showToast('악보 저장 미확인 · 최신 파일 확인 후 다시 시도해주세요');
+    }
   }finally{
-    afterScoreBusy=false;
-    const input=document.getElementById('afterScoreFileInput');if(input)input.value='';
-    renderAfterScore();
+    if(completed){progress(file.size,file.size,start,'업로드 완료');status('업로드 완료');showToast('악보 저장 검증 완료');hide(1800)}
+    if(after)afterScoreBusy=false;else scoreBusy=false;
+    const input=document.getElementById(after?'afterScoreFileInput':'scoreFileInput');if(input)input.value='';
+    render();
   }
 }
+
+function uploadAfterScoreFile(file){return uploadWorshipScore_(file,true)}
 
 function scorePost(action,fields={},timeoutMs=45000){
   const requestId='score_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2);
@@ -3169,6 +3123,7 @@ function scorePost(action,fields={},timeoutMs=45000){
       if(!trustedWorshipBridge_(event,iframe)){
         logEvent('WARN','SCORE_POST_UNTRUSTED',`action=${action} origin=${event.origin}`);return;
       }
+      observeServer_('score',msg);
       if(!msg.ok)return finish(new Error(msg.error||'악보 요청에 실패했습니다.'));
       finish(null,msg);
     };
@@ -3197,6 +3152,8 @@ async function loadScoreMeta(silent=true,suppressGlobal=false){
   try{
     const res=await scoreJsonp('meta',30000);
     if(!res||res.ok!==true)throw new Error((res&&res.error)||'악보 정보를 불러오지 못했습니다.');
+    if(!Object.prototype.hasOwnProperty.call(res,'file')||(res.file!==null&&(!res.file||!res.file.id)))throw Error('악보 데이터 형식 오류');
+    if(scoreBusy)return;
     SCORE_META=res.file||null;
     scoreMetaState='loaded';
     scoreMetaError='';
@@ -3316,154 +3273,7 @@ async function scoreChunkPostWithRetry(fields){
   throw lastError||new Error('업로드 조각 전송에 실패했습니다.');
 }
 
-async function uploadScoreFile(file){
-  if(!file||scoreBusy)return;
-  const ext=(file.name.split('.').pop()||'').toLowerCase();
-  const mime=String(file.type||'').toLowerCase();
-  const allowedExt=['pdf','ppt','pptx','doc','docx','jpg','jpeg','png'];
-  const allowedMime=[
-    'application/pdf',
-    'application/vnd.ms-powerpoint',
-    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-    'application/msword',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'image/jpeg',
-    'image/png'
-  ];
-  if(!allowedExt.includes(ext)&&!allowedMime.includes(mime)){
-    showToast('PDF · PPT · DOC · JPG · PNG 파일만 올릴 수 있습니다');
-    logEvent('WARN','SCORE_FILE_REJECT',`name=${file.name} type=${mime||'unknown'}`);
-    return;
-  }
-  logEvent('INFO','SCORE_FILE_PICKED',`name=${file.name} type=${mime||'unknown'} size=${file.size}`);
-  if(file.size>25*1024*1024){
-    showToast('악보 파일은 25MB 이하만 가능합니다');
-    return;
-  }
-  if(SCORE_META&&!confirm('기존 악보는 삭제되고 이 파일로 교체됩니다. 계속할까요?'))return;
-
-  scoreBusy=true;
-  renderScore();
-  const startedAt=performance.now();
-  let uploaded=0;
-  updateScoreProgress(0,file.size,startedAt,'업로드 준비 중');
-  setScoreStatus('악보 서버 확인 중…','working');
-
-  try{
-    await ensureScoreApiReady();
-    setScoreStatus('Drive 업로드 준비 중…','working');
-    // 대부분의 악보는 몇 MB 이하여서 복잡한 resumable 과정을 거치지 않는 직접 저장이 더 안정적입니다.
-    if(file.size<=4*1024*1024){
-      updateScoreProgress(Math.max(1,Math.floor(file.size*0.08)),file.size,startedAt,'파일 읽는 중…');
-      const directBase64=await blobToBase64(file);
-      updateScoreProgress(Math.max(1,Math.floor(file.size*0.25)),file.size,startedAt,'Drive에 직접 저장 중…');
-      try{
-        const directRes=await scorePost('uploadDirect',{
-          fileName:file.name,
-          mimeType:file.type||'',
-          totalSize:file.size,
-          dataBase64:directBase64
-        },60000);
-        if(directRes&&directRes.complete&&directRes.file){
-          SCORE_META=directRes.file;
-          scoreMetaState='loaded';
-          scoreMetaError='';
-          cacheScoreMeta_();
-          updateScoreProgress(file.size,file.size,startedAt,'업로드 완료');
-          renderScore();
-          setScoreStatus(directRes.warning?'업로드 완료 · '+directRes.warning:'업로드 완료');
-          showToast('악보를 교체했습니다');
-          hideScoreProgress(1800);
-          return;
-        }
-        throw new Error('직접 저장 완료 응답을 받지 못했습니다.');
-      }catch(directErr){
-        const directMsg=String(directErr&&directErr.message?directErr.message:directErr||'');
-        if(/scope|permission|authorization|권한|ACCESS_TOKEN_SCOPE_INSUFFICIENT|insufficientPermissions/i.test(directMsg)){
-          throw directErr;
-        }
-        logEvent('WARN','SCORE_DIRECT_RECOVERY',directMsg);
-        // 응답만 놓친 경우 새 파일이 이미 저장됐을 수 있으므로 meta로 먼저 복구합니다.
-        try{
-          const metaRes=await scoreJsonp('meta',15000);
-          const recovered=metaRes&&metaRes.file;
-          if(recovered&&String(recovered.name||'')===String(file.name||'')&&Number(recovered.size||0)===Number(file.size||0)){
-            SCORE_META=recovered;
-            scoreMetaState='loaded';
-            scoreMetaError='';
-            cacheScoreMeta_();
-            updateScoreProgress(file.size,file.size,startedAt,'업로드 완료');
-            renderScore();
-            setScoreStatus('업로드 완료');
-            showToast('악보를 교체했습니다');
-            hideScoreProgress(1800);
-            logEvent('INFO','SCORE_DIRECT_RECOVERED',`name=${file.name} size=${file.size}`);
-            return;
-          }
-        }catch(metaErr){
-          logEvent('WARN','SCORE_DIRECT_META_FAIL',metaErr&&metaErr.message?metaErr.message:String(metaErr));
-        }
-        // 구버전 백엔드거나 직접 저장이 실패한 경우 기존 분할 업로드로 자동 전환합니다.
-        logEvent('WARN','SCORE_DIRECT_FALLBACK','resumable');
-        setScoreStatus('직접 저장 실패 · 분할 업로드로 재시도 중…','working');
-      }
-    }
-
-    const startRes=await scorePost('uploadStart',{
-      fileName:file.name,
-      mimeType:file.type||'',
-      totalSize:file.size
-    },30000);
-
-    const uploadId=String(startRes.uploadId||'');
-    const chunkSize=Math.max(256*1024,Number(startRes.chunkSize||768*1024));
-    if(!uploadId)throw new Error('업로드 세션을 만들지 못했습니다.');
-
-    setScoreStatus('Drive에 분할 업로드 중…','working');
-    let lastRes=null;
-    while(uploaded<file.size){
-      const endExclusive=Math.min(file.size,uploaded+chunkSize);
-      const blob=file.slice(uploaded,endExclusive);
-      const dataBase64=await blobToBase64(blob);
-      lastRes=await scoreChunkPostWithRetry({
-        uploadId,
-        start:uploaded,
-        end:endExclusive-1,
-        totalSize:file.size,
-        dataBase64
-      });
-      const acknowledged=Number(lastRes.receivedBytes||endExclusive);
-      uploaded=Math.max(endExclusive,Math.min(file.size,acknowledged));
-      updateScoreProgress(uploaded,file.size,startedAt,lastRes.complete?'마무리 중…':'Drive에 업로드 중');
-    }
-
-    if(!lastRes||!lastRes.complete||!lastRes.file){
-      throw new Error('파일 전송은 끝났지만 Drive 저장 완료 응답을 받지 못했습니다.');
-    }
-
-    SCORE_META=lastRes.file;
-    scoreMetaState='loaded';
-    scoreMetaError='';
-    cacheScoreMeta_();
-    updateScoreProgress(file.size,file.size,startedAt,'업로드 완료');
-    renderScore();
-    setScoreStatus('업로드 완료');
-    showToast('악보를 교체했습니다');
-    hideScoreProgress(1800);
-  }catch(e){
-    const msg=e&&e.message?e.message:String(e);
-    logEvent('ERROR','SCORE_UPLOAD_FINAL_FAIL',`name=${file.name} type=${file.type||''} size=${file.size} msg=${msg}`);
-    failScoreProgress(msg);
-    setScoreStatus(msg,'error');
-    showToast('악보 최종 저장 실패');
-  }finally{
-    scoreBusy=false;
-    const input=document.getElementById('scoreFileInput');
-    if(input)input.value='';
-    renderScore();
-  }
-}
-
+function uploadScoreFile(file){return uploadWorshipScore_(file,false)}
 
 function renderSettings(){
   renderDateSettings();
@@ -4253,6 +4063,7 @@ document.getElementById('copyLog').onclick=copyLogs;
 document.getElementById('clearLog').onclick=clearLogs;
 document.getElementById('downloadLog').onclick=downloadLogs_;
 document.getElementById('reviewConflicts').onclick=reviewConflicts_;
+document.getElementById('reviewLegacyLinks').onclick=reviewLegacyLinks_;
 document.getElementById('retryConnection').onclick=()=>bootstrap(false);
 document.getElementById('scoreUploadBtn').onclick=()=>document.getElementById('scoreFileInput').click();
 document.getElementById('scoreFileInput').onchange=e=>uploadScoreFile(e.target.files&&e.target.files[0]);
@@ -4327,7 +4138,7 @@ async function pollRevision(force=false){
   }catch(e){markReadFailure_(e)}
   finally{readInFlight=false}
   if(refresh)await bootstrap(false,true);
-  if(pending.length&&!flushing&&serverFresh){clearTimeout(retryTimer);retryTimer=setTimeout(flushQueue,100)}
+  if(pending.length&&!flushing&&serverFresh&&!retryTimer){retryTimer=setTimeout(()=>{retryTimer=null;flushQueue()},100)}
 }
 
 logEvent('INFO','APP_START',`version=${APP_VERSION}`);
@@ -4395,6 +4206,7 @@ window.addEventListener('online',()=>{
   logEvent('INFO','NETWORK','online');
   clearTimeout(reconnectTimer);
   reconnectTimer=null;
+  clearTimeout(retryTimer);retryTimer=null;
   if(STATE)pollRevision(true);
   else bootstrap(false);
   if(getPendingAfterYoutubeLinks_())scheduleAfterYoutubePendingSync_(500);
