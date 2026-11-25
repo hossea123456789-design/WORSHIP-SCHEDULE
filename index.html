@@ -176,7 +176,7 @@ const DEFAULT_HONORIFICS=['집사님','목사님','사모님','권사님','장�
 const APP_PUBLIC_URL='https://hossea123456789-design.github.io/WORSHIP-SCHEDULE/';
 const KAKAO_JAVASCRIPT_KEY='c14b7dd534f10ac1fc266ba52c9e7a56';
 const STORAGE_PREFIX='worship_fast_v3_';
-const APP_VERSION='v3.21.2';
+const APP_VERSION='v3.21.3';
 const BOOTSTRAP_TIMEOUT_MS=25000;
 const MUTATE_TIMEOUT_MS=25000;
 
@@ -926,9 +926,27 @@ function shareAfterScore_(){return shareScore_('after')}
 
 function showApiError(message){showConnectionError(message||'Apps Script 응답을 확인할 수 없습니다.')}
 
+const readTransportMemory_={};
+
+function trustedWorshipBridge_(event,iframe){
+  try{
+    // HtmlService may send from a nested Google sandbox iframe.
+    if(!/^https:\/\/(?:script\.google\.com|(?:[a-z0-9-]+[.-])*script\.googleusercontent\.com)$/i.test(event.origin))return false;
+    const target=iframe.contentWindow;
+    let source=event.source;
+    for(let i=0;source&&target&&i<12;i++){
+      if(source===target)return true;
+      const parent=source.parent;
+      if(!parent||parent===source)break;
+      source=parent;
+    }
+  }catch(e){}
+  return false;
+}
+
 function isHardConnectionError(err){
   const msg=String(err&&err.message?err.message:err||'');
-  return msg.includes('Apps Script API에 연결하지 못했습니다.');
+  return msg.includes('Apps Script API에 연결하지 못했습니다.')||msg.includes('일정 서버 연결 실패');
 }
 
 function jsonpScript(action,params={},timeout=15000,options={}){
@@ -960,6 +978,7 @@ function jsonpScript(action,params={},timeout=15000,options={}){
       if(!options.quietFailure)logEvent(options.background?'WARN':'ERROR','API_SCRIPT_ERROR',`action=${action} online=${navigator.onLine} host=${new URL(API_URL).host}`);
       finish(new Error('Apps Script API에 연결하지 못했습니다.'));
     };
+    script.onload=()=>{if(!done)finish(new Error('JSONP 응답은 도착했지만 콜백이 실행되지 않았습니다.'));};
     script.src=API_URL+'?'+q.toString();
     document.head.appendChild(script);
   });
@@ -1016,6 +1035,9 @@ function worshipIframePost(action,params={},timeout=15000,options={}){
     const onMessage=event=>{
       const msg=event.data||{};
       if(msg.source!=='worship-schedule-api'||msg.requestId!==requestId)return;
+      if(!trustedWorshipBridge_(event,iframe)){
+        logEvent('WARN','API_POST_UNTRUSTED',`action=${action} origin=${event.origin}`);return;
+      }
       finish(null,msg.payload);
     };
     const timer=setTimeout(()=>finish(new Error('POST 대체 경로 응답 시간이 초과되었습니다.')),timeout);
@@ -1029,87 +1051,90 @@ function worshipIframePost(action,params={},timeout=15000,options={}){
 
 function waitMs_(ms){return new Promise(resolve=>setTimeout(resolve,ms))}
 
-async function readApi(action,params={},timeout=12000,options={}){
-  const attempts=Math.max(1,Math.min(2,Number(options.attempts||2)));
-  const hedgeDelay=Math.max(800,Number(options.hedgeDelay||(action==='revision'?2000:2800)));
+function getReadRoute_(scope){
+  const route=readTransportMemory_[scope]||safeGet('api_read_route_'+scope);
+  return route==='post'?'post':'jsonp';
+}
+
+function rememberReadRoute_(scope,route){
+  if(getReadRoute_(scope)!==route)logEvent('INFO','API_ROUTE_SWITCH',`scope=${scope} route=${route}`);
+  readTransportMemory_[scope]=route;
+  safeSet('api_read_route_'+scope,route);
+}
+
+function adaptiveRead_(scope,action,transports,hedgeDelay){
+  const first=getReadRoute_(scope);
+  const routes=[first,first==='jsonp'?'post':'jsonp'];
   const started=performance.now();
-
   return new Promise((resolve,reject)=>{
-    let settled=false;
-    let launched=0;
-    let failed=0;
-    let hedgeTimer=null;
-    const errors=[];
-
-    const finishSuccess=(data,attempt)=>{
+    let settled=false,launched=0,failed=0,hedgeTimer=null;
+    const errors={};
+    const fail=(route,err)=>{
       if(settled)return;
-      settled=true;
-      clearTimeout(hedgeTimer);
-      readFailureStreak=0;
-      hardConnectionDown=false;
-      lastReadSuccessAt=Date.now();
-      clearConnectionError();
-      logEvent('INFO','API_READ_OK',`action=${action} attempt=${attempt} ms=${Math.round(performance.now()-started)}`);
-      resolve(data);
-    };
-
-    const finishFailure=(err)=>{
-      errors.push(err);
+      errors[route]=err&&err.message?err.message:String(err);
       failed++;
-      if(settled)return;
-
-      if(launched<attempts){
+      logEvent('WARN','API_ROUTE_FAIL',`scope=${scope} action=${action} route=${route} ms=${Math.round(performance.now()-started)} msg=${errors[route]}`);
+      if(launched<routes.length){
         clearTimeout(hedgeTimer);
-        launch();
-        return;
+        launch('failure');
       }
-
-      if(failed>=attempts){
-        settled=true;
-        clearTimeout(hedgeTimer);
-        const lastErr=errors[errors.length-1]||new Error('일정 서버 읽기에 실패했습니다.');
-        logEvent('WARN','API_READ_FAIL',`action=${action} attempts=${attempts} ms=${Math.round(performance.now()-started)} msg=${lastErr&&lastErr.message?lastErr.message:lastErr}`);
-        reject(lastErr);
+      if(failed===routes.length&&!settled){
+        settled=true;clearTimeout(hedgeTimer);
+        const msg=`${scope==='schedule'?'일정':'악보'} 서버 연결 실패 · JSONP: ${errors.jsonp} · POST: ${errors.post}`;
+        logEvent('WARN','API_READ_FAIL',`scope=${scope} action=${action} attempts=${launched} ms=${Math.round(performance.now()-started)} msg=${msg}`);
+        reject(new Error(msg));
       }
     };
-
-    const launch=()=>{
-      if(settled||launched>=attempts)return;
-      launched++;
-      const attempt=launched;
-      logEvent('INFO',attempt===1?'API_START':'API_HEDGE_START',`action=${action} attempt=${attempt}`);
-      jsonpScript(
-        action,
-        params,
-        timeout,
-        {...options,background:true,quietFailure:true,quietSuccess:true}
-      ).then(data=>finishSuccess(data,attempt)).catch(finishFailure);
+    const launch=reason=>{
+      if(settled||launched>=routes.length)return;
+      const route=routes[launched++];
+      logEvent('INFO',launched===1?'API_READ_START':'API_READ_FALLBACK',`scope=${scope} action=${action} route=${route} attempt=${launched} reason=${reason}`);
+      Promise.resolve().then(()=>transports[route]()).then(data=>{
+        if(settled)return;
+        if(!data||typeof data!=='object'||typeof data.ok!=='boolean'){
+          fail(route,new Error('유효한 API 응답이 아닙니다.'));return;
+        }
+        settled=true;clearTimeout(hedgeTimer);
+        if(data.ok===true)rememberReadRoute_(scope,route);
+        logEvent(data.ok?'INFO':'WARN',data.ok?'API_READ_OK':'API_SERVER_ERROR',`scope=${scope} action=${action} route=${route} ms=${Math.round(performance.now()-started)}${data.ok?'':' msg='+String(data.error||'서버 오류')}`);
+        resolve(data);
+      },err=>fail(route,err));
     };
-
-    launch();
-    if(attempts>1){
-      hedgeTimer=setTimeout(()=>{
-        if(!settled&&launched<attempts)launch();
-      },hedgeDelay);
-    }
+    launch('preferred');
+    hedgeTimer=setTimeout(()=>launch('slow_response'),hedgeDelay);
   });
 }
 
-async function jsonp(action,params={},timeout=15000,options={}){
-  const readOnly=action==='bootstrap'||action==='revision';
-  if(readOnly)return readApi(action,params,Math.min(timeout,action==='revision'?12000:15000),options);
+async function readApi(action,params={},timeout=12000,options={}){
+  const hedgeDelay=Math.max(800,Number(options.hedgeDelay||(action==='revision'?2000:2800)));
+  const transportOptions={...options,background:true,quietFailure:true,quietSuccess:true};
+  const data=await adaptiveRead_('schedule',action,{
+    jsonp:()=>jsonpScript(action,params,timeout,transportOptions),
+    post:()=>worshipIframePost(action,params,timeout,transportOptions)
+  },hedgeDelay);
+  if(data.ok){
+    readFailureStreak=0;
+    hardConnectionDown=false;
+    lastReadSuccessAt=Date.now();
+    clearConnectionError();
+  }
+  return data;
+}
 
-  try{
-    return await jsonpScript(action,params,timeout,options);
-  }catch(firstErr){
+async function jsonp(action,params={},timeout=15000,options={}){
+  if(action==='bootstrap'||action==='revision')return readApi(action,params,Math.min(timeout,action==='revision'?12000:15000),options);
+  // Writes remain sequential and keep the original mutation IDs / queue.
+  const first=getReadRoute_('schedule');
+  const second=first==='jsonp'?'post':'jsonp';
+  const send=route=>route==='post'?worshipIframePost(action,params,timeout,options):jsonpScript(action,params,timeout,options);
+  try{return await send(first)}
+  catch(firstErr){
     if(!navigator.onLine)throw firstErr;
-    logEvent('WARN','API_FALLBACK_POST',`action=${action} reason=${firstErr&&firstErr.message?firstErr.message:firstErr}`);
-    try{
-      return await worshipIframePost(action,params,timeout,options);
-    }catch(postErr){
-      const firstMsg=firstErr&&firstErr.message?firstErr.message:String(firstErr||'');
-      const postMsg=postErr&&postErr.message?postErr.message:String(postErr||'');
-      throw new Error(`일정 서버 연결 실패 · JSONP: ${firstMsg} · POST: ${postMsg}`);
+    logEvent('WARN','API_WRITE_FALLBACK',`action=${action} from=${first} to=${second} reason=${firstErr&&firstErr.message?firstErr.message:firstErr}`);
+    try{return await send(second)}
+    catch(secondErr){
+      const errors={[first]:firstErr,[second]:secondErr};
+      throw new Error(`일정 서버 연결 실패 · JSONP: ${errors.jsonp&&errors.jsonp.message||errors.jsonp} · POST: ${errors.post&&errors.post.message||errors.post}`);
     }
   }
 }
@@ -3185,6 +3210,9 @@ function scorePost(action,fields={},timeoutMs=45000){
     const onMessage=event=>{
       const msg=event.data||{};
       if(msg.source!=='worship-score-api'||msg.requestId!==requestId)return;
+      if(!trustedWorshipBridge_(event,iframe)){
+        logEvent('WARN','SCORE_POST_UNTRUSTED',`action=${action} origin=${event.origin}`);return;
+      }
       if(!msg.ok)return finish(new Error(msg.error||'악보 요청에 실패했습니다.'));
       finish(null,msg);
     };
@@ -3192,7 +3220,7 @@ function scorePost(action,fields={},timeoutMs=45000){
     window.addEventListener('message',onMessage);
     document.body.appendChild(iframe);
     document.body.appendChild(form);
-    form.submit();
+    try{form.submit()}catch(e){finish(e)}
   });
 }
 
@@ -3261,6 +3289,15 @@ function blobToBase64(blob){
 function waitMs(ms){return new Promise(resolve=>setTimeout(resolve,ms))}
 
 function scoreJsonp(action,timeout=15000){
+  // Read actions supported by both score API transports.
+  if(!['health','meta','afterMeta','afterLinks'].includes(action))return scoreJsonpScript_(action,timeout);
+  return adaptiveRead_('score',action,{
+    jsonp:()=>scoreJsonpScript_(action,timeout),
+    post:()=>scorePost(action,{},timeout)
+  },2800);
+}
+
+function scoreJsonpScript_(action,timeout=15000){
   const started=performance.now();
   return new Promise((resolve,reject)=>{
     const cb='__scorecb_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2);
@@ -3285,6 +3322,7 @@ function scoreJsonp(action,timeout=15000){
     }
     window[cb]=data=>finish(null,data);
     script.onerror=()=>finish(new Error('악보 서버에 연결하지 못했습니다.'));
+    script.onload=()=>{if(!done)finish(new Error('악보 JSONP 콜백이 실행되지 않았습니다.'));};
     script.src=SCORE_API_URL+'?'+q.toString();
     document.head.appendChild(script);
   });
