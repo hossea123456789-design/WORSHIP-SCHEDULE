@@ -534,7 +534,7 @@ function worshipExpectedTarget_(d,m){
     case 'memberDelete':case 'roleDelete':return null;
     case 'roleSave':return [str(p.name).trim(),str(p.colorKey||'other'),!!p.allowMultiple];
     case 'prayerOrderSet':return (p.memberIds||[]).map(str).filter(Boolean);
-    case 'honorificOptionsSet':return ids(p.options).map(x=>x.trim()).filter(Boolean);
+    case 'honorificOptionsSet':return ids((p.options||[]).map(x=>str(x).trim().slice(0,20))).slice(0,30);
     case 'rotationSnapshotSet':return (p.slots||[]).flatMap(slot=>ids(slot.memberIds).map((id,i)=>[Number(slot.eventIndex),str(slot.roleId),i+1,id])).sort((a,b)=>a[0]-b[0]||a[1].localeCompare(b[1])||a[2]-b[2]||a[3].localeCompare(b[3]));
     default:throw Error('이전 저장 형식은 최신 앱에서 다시 확인해야 합니다.');
   }
@@ -549,9 +549,9 @@ function worshipVerifiedTarget_(d,m,expected){
 
 function worshipMutationReceipts_(ss){
   const sheet=ss.getSheetByName(WORSHIP_API.SHEETS.MUTATION_LOG);
-  const out={};
+  const out=Object.create(null);
   if(!sheet||sheet.getLastRow()<2)return out;
-  const count=Math.min(sheet.getLastRow()-1,WORSHIP_API.LOG_KEEP);
+  const count=sheet.getLastRow()-1;
   sheet.getRange(sheet.getLastRow()-count+1,1,count,4).getDisplayValues().forEach(r=>{out[String(r[0])]=String(r[2]||'')});
   return out;
 }
@@ -613,7 +613,7 @@ function worshipGetRevision_(){return worshipRevisionFromDb_(worshipDb_())}
 function worshipMutateBatch_(batch){
   const items=batch&&Array.isArray(batch.items)?batch.items:[];
   if(!items.length||items.length>60)throw Error('묶음 저장은 1~60건까지 가능합니다.');
-  if(items.some(m=>!m||!m.id||!['assignmentSet','eventSet'].includes(m.type)))throw Error('묶음 저장 형식이 올바르지 않습니다.');
+  if(items.some(m=>!m||!/^mu_[a-zA-Z0-9_]{5,100}$/.test(String(m.id||''))||!['assignmentSet','eventSet'].includes(m.type)))throw Error('묶음 저장 형식이 올바르지 않습니다.');
   const lock=LockService.getScriptLock();
   if(!lock.tryLock(4000))return {ok:true,busy:true,retryAfterMs:1000};
   let ss=null,dirty=false;
@@ -772,14 +772,11 @@ function worshipAppendMutationLogs_(ss, items, now) {
     sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, 4).setValues(rows);
   }
 
-  const dataRows = Math.max(sheet.getLastRow() - 1, 0);
-  if (dataRows > WORSHIP_API.LOG_KEEP) {
-    sheet.deleteRows(2, dataRows - WORSHIP_API.LOG_KEEP);
-  }
+  // Mutation receipts are durable idempotency records, not disposable diagnostics.
 }
 
 function worshipMutate_(mutation){
-  if(!mutation||!mutation.id||!mutation.type)throw Error('저장 요청 형식이 올바르지 않습니다.');
+  if(!mutation||!/^mu_[a-zA-Z0-9_]{5,100}$/.test(String(mutation.id||''))||!mutation.type)throw Error('저장 요청 형식이 올바르지 않습니다.');
   const m=mutation,p={...(m.payload||{})},type=String(m.type),lock=LockService.getScriptLock();
   if(!lock.tryLock(1800))return {ok:true,busy:true,retryAfterMs:900};
   let ss=null,dirty=false;
@@ -1057,7 +1054,7 @@ function worshipLatestBaseBefore_(month,rows) { const target=worshipMonthNum_(mo
 function worshipEffectiveMemberIds_(date,roleId,month,monthDates,assignments,rotation,inheritedBase) { const explicit=(assignments||[]).filter(a=>worshipTruthy_(a.active)&&worshipIsoDate_(a.event_date)===date&&String(a.role_id)===roleId).sort((a,b)=>worshipNum_(a.sort_order)-worshipNum_(b.sort_order)); if(explicit.length)return explicit.filter(a=>String(a.member_id||'')).map(a=>String(a.member_id)); if(!inheritedBase)return[]; const targetIndex=monthDates.indexOf(date); if(targetIndex<0)return[]; const baseRows=(rotation||[]).filter(r=>worshipTruthy_(r.active)&&String(r.base_month)===inheritedBase), indices=[...new Set(baseRows.map(r=>worshipNum_(r.event_index)).filter(Boolean))].sort((a,b)=>a-b); if(!indices.length)return[]; const patternIndex=indices[targetIndex%indices.length]; return baseRows.filter(r=>worshipNum_(r.event_index)===patternIndex&&String(r.role_id)===roleId&&String(r.member_id||'')).sort((a,b)=>worshipNum_(a.sort_order)-worshipNum_(b.sort_order)).map(r=>String(r.member_id)); }
 
 function worshipMutationAlreadyApplied_(ss,mutationId) { const sheet=ss.getSheetByName(WORSHIP_API.SHEETS.MUTATION_LOG); if(!sheet||sheet.getLastRow()<2)return false; const count=Math.min(Math.max(sheet.getLastRow()-1,0),WORSHIP_API.LOG_KEEP); if(!count)return false; const start=sheet.getLastRow()-count+1, values=sheet.getRange(start,1,count,1).getDisplayValues(); return values.some(r=>String(r[0])===mutationId); }
-function worshipAppendMutationLog_(ss,mutationId,clientId,type,now) { const sheet=ss.getSheetByName(WORSHIP_API.SHEETS.MUTATION_LOG); if(!sheet)throw new Error('필수 시트가 없습니다: '+WORSHIP_API.SHEETS.MUTATION_LOG); sheet.appendRow([mutationId,clientId,type,now]); const rows=Math.max(sheet.getLastRow()-1,0); if(rows>WORSHIP_API.LOG_KEEP)sheet.deleteRows(2,rows-WORSHIP_API.LOG_KEEP); }
+function worshipAppendMutationLog_(ss,mutationId,clientId,type,now) { const sheet=ss.getSheetByName(WORSHIP_API.SHEETS.MUTATION_LOG); if(!sheet)throw new Error('필수 시트가 없습니다: '+WORSHIP_API.SHEETS.MUTATION_LOG); sheet.appendRow([mutationId,clientId,type,now]); /* Keep receipt IDs for offline replay protection. */ }
 function worshipIncrementRevision_(ss,now) {
   const sheet=ss.getSheetByName(WORSHIP_API.SHEETS.CONFIG);
   if(!sheet)throw new Error('필수 시트가 없습니다: '+WORSHIP_API.SHEETS.CONFIG);
