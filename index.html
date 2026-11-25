@@ -176,7 +176,7 @@ const DEFAULT_HONORIFICS=['집사님','목사님','사모님','권사님','장�
 const APP_PUBLIC_URL='https://hossea123456789-design.github.io/WORSHIP-SCHEDULE/';
 const KAKAO_JAVASCRIPT_KEY='c14b7dd534f10ac1fc266ba52c9e7a56';
 const STORAGE_PREFIX='worship_fast_v3_';
-const APP_VERSION='v3.22.0';
+const APP_VERSION='v3.22.1';
 let serverState_=null,modalBaseState_=null,deferredRender_=false,interactionPointer_=false,dateDraftBases_={};
 const serverVersions_={schedule:'unknown',score:'unknown'};
 const BOOTSTRAP_TIMEOUT_MS=25000;
@@ -336,11 +336,37 @@ function scheduleAfterYoutubePendingSync_(delay=1800){
   afterLinksRetryTimer=setTimeout(()=>{afterLinksRetryTimer=null;syncPendingAfterYoutubeLinks_(true)},delay);
 }
 
+function finishScheduleConnection_(reason,showProgress=false){
+  // Connection confirmation must terminate the old cache/reconnect progress timer.
+  const wasWaiting=!!syncProgressTimer||syncProgressCurrent>0||/서버 연결|최신 상태 확인|자동 재확인|연결 오류/.test(processStatus);
+  stopSyncProgress(true);
+  clearConnectionError();
+  if(flushing||pending.length){
+    if(!flushing)setProcess(scheduleServerReady_()?'저장 대기 중':'일정 서버 업데이트 필요 · 저장 보류',scheduleServerReady_()?'working':'error');
+    logEvent('INFO','SYNC_READY',`reason=${reason} pending=${pending.length} revision=${STATE&&STATE.revision}`);
+    return;
+  }
+  if(getConflicts_().length){
+    setProcess('저장 충돌 · 내역 검토 필요','error');
+    return;
+  }
+  if(getPendingAfterYoutubeLinks_()){
+    setProcess('예배 후 찬양 링크 저장 대기','working');
+    scheduleAfterYoutubePendingSync_(100);
+    return;
+  }
+  if(scoreBusy||afterScoreBusy||afterLinksSaving)return;
+  if(!showProgress&&!wasWaiting)return;
+  // The schedule is usable immediately; auxiliary reads are independent.
+  setProcess('연결 완료','ok');
+  logEvent('INFO','SYNC_READY',`reason=${reason} revision=${STATE&&STATE.revision} server=${serverVersions_.schedule}`);
+}
+
 function scheduleScoreMetaWarm_(){
-  if(auxiliaryRefreshInFlight||auxiliaryRefreshPromise)return;
+  if(auxiliaryRefreshInFlight||auxiliaryRefreshPromise||document.visibilityState==='hidden')return;
   clearTimeout(scoreMetaWarmTimer);
   scoreMetaWarmTimer=setTimeout(()=>{
-    refreshAuxiliaryData_(false);
+    if(document.visibilityState!=='hidden'&&navigator.onLine)refreshAuxiliaryData_(false);
   },350);
 }
 function requireFreshWrite_(label='수정'){
@@ -1534,7 +1560,7 @@ function scheduleGlobalProcessSettle_(delay=1200,detail=''){
   clearTimeout(globalProcessSettleTimer);
   globalProcessSettleTimer=setTimeout(()=>{
     globalProcessSettleTimer=null;
-    if(pending.length||getPendingAfterYoutubeLinks_()||getConflicts_().length)return;
+    if(pending.length||getPendingAfterYoutubeLinks_()||getConflicts_().length||!serverFresh||hardConnectionDown||!navigator.onLine)return;
     if(globalOperationBusy_()){
       scheduleGlobalProcessSettle_(280,detail);
       return;
@@ -1731,18 +1757,8 @@ async function bootstrap(showLoading=true,silentFailure=false){
     if(!silentFailure&&!pending.length)setSyncProgress(98,'화면 반영 중',hadState,'월별 편성·기도·설정 화면에 최신 데이터를 적용하고 있습니다.');
     renderSynced_();
     clearConnectionError();
-    if(!silentFailure&&!pending.length){
-      stopSyncProgress(true);
-      setProcess(
-        '일정 확인 완료 · 찬양 자료 확인 준비',
-        'working',
-        '일정 데이터 반영 완료 · 주일 악보·예배 후 악보·찬양 링크를 이어서 확인합니다.',
-        60
-      );
-      setTimeout(()=>refreshAuxiliaryData_(true),0);
-    }else if(!pending.length){
-      scheduleScoreMetaWarm_();
-    }else{stopSyncProgress(true);setProcess('저장 대기 중','working')}
+    finishScheduleConnection_('bootstrap',!silentFailure);
+    if(!pending.length)scheduleScoreMetaWarm_();
     logEvent('INFO',silentFailure?'BOOTSTRAP_BG_OK':'BOOTSTRAP_OK',`ms=${Math.round(performance.now()-started)} revision=${STATE.revision}`);
     return true;
   }catch(e){
@@ -4160,6 +4176,7 @@ async function pollRevision(force=false){
     else{
       serverFresh=true;hardConnectionDown=false;readFailureStreak=0;lastReadSuccessAt=Date.now();
       clearTimeout(reconnectTimer);reconnectTimer=null;
+      finishScheduleConnection_('revision_match');
       if(!pending.length&&!isInteractionActive_())scheduleScoreMetaWarm_();
     }
   }catch(e){markReadFailure_(e)}
@@ -4242,6 +4259,7 @@ window.addEventListener('online',()=>{
 window.addEventListener('offline',()=>{
   logEvent('INFO','NETWORK','offline');
   serverFresh=false;
+  stopSyncProgress(true);
   clearTimeout(reconnectTimer);
   reconnectTimer=null;
   setProcess(STATE?'오프라인 · 캐시 사용':'오프라인','offline');
