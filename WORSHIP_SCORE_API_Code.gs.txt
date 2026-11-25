@@ -139,7 +139,7 @@ function doGet(e) {
         ok: true,
         service: SCORE_STORE.APP,
         version: SCORE_API_VERSION,
-        ...getAfterYoutubeLinks_()
+        ...getAfterYoutubeLinks_(p.operationId)
       };
     } else {
       data = {
@@ -198,7 +198,7 @@ function doPost(e) {
         ok: true,
         service: SCORE_STORE.APP,
         version: SCORE_API_VERSION,
-        ...getAfterYoutubeLinks_()
+        ...getAfterYoutubeLinks_(p.operationId)
       }, requestId);
     }
     if (action === 'afterLinksSet') {
@@ -371,7 +371,7 @@ function uploadScoreDirect_(p) {
       file: buildScoreMeta_(file, updatedAt)
     };
   } catch (err) {
-    try { file.setTrashed(true); } catch (_) {}
+    discardStagedScore_(file,false);
     throw err;
   }
 }
@@ -591,7 +591,7 @@ function uploadScoreChunk_(p) {
         file: buildScoreMeta_(file, updatedAt)
       };
     } catch (err) {
-      try { file.setTrashed(true); } catch (_) {}
+      discardStagedScore_(file,false);
       throw err;
     }
   }
@@ -649,6 +649,13 @@ function scoreCurrentMetaLocked_(after){
   return {...buildScoreMeta_(newest,time),operationId:''};
 }
 
+function discardStagedScore_(file,after){
+  try{
+    const store=after?AFTER_SCORE_STORE:SCORE_STORE;
+    // If a late response/buildMeta failed after commit, never trash the active file.
+    if(PropertiesService.getScriptProperties().getProperty(store.FILE_PROP)!==file.getId())file.setTrashed(true);
+  }catch(_){}
+}
 function scoreReadMeta_(after){
   const lock=LockService.getScriptLock();lock.waitLock(10000);
   try{return scoreCurrentMetaLocked_(after)}finally{lock.releaseLock()}
@@ -895,7 +902,7 @@ function uploadAfterScoreDirect_(p) {
       file: buildScoreMeta_(file, updatedAt)
     };
   } catch (err) {
-    try { file.setTrashed(true); } catch (_) {}
+    discardStagedScore_(file,true);
     throw err;
   }
 }
@@ -1085,7 +1092,7 @@ function uploadAfterScoreChunk_(p) {
         file: buildScoreMeta_(file, updatedAt)
       };
     } catch (err) {
-      try { file.setTrashed(true); } catch (_) {}
+      discardStagedScore_(file,true);
       throw err;
     }
   }
@@ -1117,6 +1124,7 @@ function getAfterLinkFolder_(createIfMissing) {
   const savedId = String(props.getProperty(AFTER_LINK_STORE.FOLDER_PROP) || '');
   const saved = scoreFolderByIdIfUsable_(savedId);
   if (saved) return saved;
+  if(savedId)throw Error('기존 링크 폴더 접근 실패 · 원본 보존');
 
   const root = DriveApp.getRootFolder();
   const it = root.getFoldersByName(AFTER_LINK_STORE.FOLDER_NAME);
@@ -1185,11 +1193,11 @@ function writeLinkDocument_(doc){
   while(files.hasNext()){const old=files.next();if(old.getId()!==newFile.getId())try{old.setTrashed(true)}catch(_){}}
 }
 
-function getAfterYoutubeLinks_(){
+function getAfterYoutubeLinks_(operationId){
   const lock=LockService.getScriptLock();lock.waitLock(10000);
   try{
     const d=readLinkDocument_();
-    return {links:d.links,linksRevision:d.revision,verifiedOperationIds:d.receipts.map(x=>x.id)};
+    return {links:d.links,linksRevision:d.revision,verifiedOperationIds:d.receipts.filter(x=>x.id===String(operationId||'')).map(x=>x.id)};
   }finally{lock.releaseLock()}
 }
 
@@ -1203,14 +1211,14 @@ function setAfterYoutubeLinks_(p){
   const lock=LockService.getScriptLock();lock.waitLock(10000);
   try{
     const d=readLinkDocument_();
-    if(d.receipts.some(x=>x.id===id))return {links:d.links,linksRevision:d.revision,verifiedOperationIds:d.receipts.map(x=>x.id),duplicate:true};
+    if(d.receipts.some(x=>x.id===id))return {links:d.links,linksRevision:d.revision,verifiedOperationIds:[id],duplicate:true};
     const next=mergeLinkChanges_(d.links,adds,removes);
     if(JSON.stringify(normalizeAfterYoutubeLinks_(next))!==JSON.stringify(next))throw Error('링크 개수 또는 형식 제한 초과');
-    const doc={links:next,revision:d.revision+1,receipts:[...d.receipts,{id,revision:d.revision+1}].slice(-200)};
+    const doc={links:next,revision:d.revision+1,receipts:[...d.receipts,{id,revision:d.revision+1}]};
     writeLinkDocument_(doc);
     const actual=readLinkDocument_();
     if(actual.revision!==doc.revision||JSON.stringify(actual.links)!==JSON.stringify(next)||!actual.receipts.some(x=>x.id===id))throw Error('링크 DB 검증 실패');
-    return {links:actual.links,linksRevision:actual.revision,verifiedOperationIds:actual.receipts.map(x=>x.id)};
+    return {links:actual.links,linksRevision:actual.revision,verifiedOperationIds:[id]};
   }finally{lock.releaseLock()}
 }
 
