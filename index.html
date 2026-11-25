@@ -429,6 +429,7 @@ async function resolveConflict_(i,reapply){
   if(reapply){
     if(!serverFresh||!scheduleServerReady_()||pending.length||flushing){showToast('서버 최신 확인 및 기존 저장 완료 후 다시 시도해주세요');return}
     const p=cloneData_(m.payload||{});
+    if(m.type==='rotationComplete'){showToast('이전 기본값은 월별 편성에서 다시 저장해주세요');return}
     if(!enqueueItems_([makeMutation_(m.type,p,serverState_||STATE)]))return;
   }
   if(!safeSet('conflict_queue',JSON.stringify(items.filter((_,j)=>j!==i)))){showToast('보류 내역 갱신 실패');return}
@@ -614,11 +615,14 @@ const LOG_LIMIT=500;
 let processStatus='연결 중…';
 let saveCompleteVisibleUntil=0; // 실제 서버 저장 성공 피드백을 연결 확인 메시지보다 우선 표시
 const SAVE_COMPLETE_VISIBLE_MS=2400;
-function readLogs(){try{const x=JSON.parse(safeGet('diagnostic_log')||'[]');return Array.isArray(x)?x:[]}catch(e){return[]}}
+function sanitizeDiagnostic_(detail){
+  return String(detail==null?'':detail).replace(/https?:\/\/[^\s]+/g,'[url]').replace(/(?:name|fileName)=.*?(?=\s(?:size|type|msg)=|$)/gi,'name=[redacted]').replace(/(?:token|password|secret|authorization)\s*[:=]\s*[^\s,;]+/gi,'[redacted]').replace(/\bBearer\s+[^\s,;]+/gi,'Bearer [redacted]').slice(0,1600);
+}
+function readLogs(){try{const x=JSON.parse(safeGet('diagnostic_log')||'[]');return Array.isArray(x)?x.map(e=>({time:e.time,level:e.level,event:e.event,detail:sanitizeDiagnostic_(e.detail)})):[]}catch(e){return[]}}
 function writeLogs(a){safeSet('diagnostic_log',JSON.stringify(a.slice(-LOG_LIMIT)))}
 function logEvent(level,event,detail){
   const a=readLogs();
-  a.push({time:new Date().toISOString(),level:String(level||'INFO'),event:String(event||''),detail:detail==null?'':String(detail).replace(/https?:\/\/[^\s]+/g,'[url]').replace(/(?:name|fileName)=.*?(?=\s(?:size|type|msg)=|$)/gi,'name=[redacted]').replace(/(?:token|password|secret|authorization)\s*[:=]\s*[^\s,;]+/gi,'[redacted]').slice(0,1600)});
+  a.push({time:new Date().toISOString(),level:String(level||'INFO'),event:String(event||''),detail:sanitizeDiagnostic_(detail)});
   writeLogs(a);
   updateLogMeta();
 }
@@ -1263,7 +1267,7 @@ function adaptiveRead_(scope,action,transports,hedgeDelay){
 }
 
 async function readApi(action,params={},timeout=12000,options={}){
-  const hedgeDelay=Math.max(800,Number(options.hedgeDelay||(action==='revision'?2000:2800)));
+  const hedgeDelay=Math.max(800,Number(options.hedgeDelay||(action==='revision'?2400:8000)));
   const transportOptions={...options,background:true,quietFailure:true,quietSuccess:true};
   const data=await adaptiveRead_('schedule',action,{
     jsonp:()=>jsonpScript(action,params,timeout,transportOptions),
@@ -1668,7 +1672,7 @@ function scheduleReconnect_(reason=''){
   }
   reconnectTimer=setTimeout(()=>{
     reconnectTimer=null;
-    pollRevision(true);
+    if(STATE)pollRevision(true);else if(navigator.onLine)bootstrap(false,true);
   },delay);
 }
 function markReadFailure_(e){
@@ -1677,7 +1681,7 @@ function markReadFailure_(e){
   serverFresh=false;
   const msg=e&&e.message?e.message:String(e||'');
   logEvent('WARN','READ_DEGRADED',`streak=${readFailureStreak} msg=${msg}`);
-  if(STATE) scheduleReconnect_(msg);
+  scheduleReconnect_(msg);
 }
 
 async function bootstrap(showLoading=true,silentFailure=false){
@@ -1704,7 +1708,7 @@ async function bootstrap(showLoading=true,silentFailure=false){
     const res=await jsonp('bootstrap',{fresh:'1'},BOOTSTRAP_TIMEOUT_MS,{background:silentFailure});
     if(!res||!res.ok)throw new Error((res&&res.error)||'초기 데이터를 불러오지 못했습니다.');
 
-    if(!silentFailure)setSyncProgress(92,'최신 데이터 적용 중',hadState,'서버 응답을 받았습니다. 최신 데이터를 화면에 적용하고 있습니다.');
+    if(!silentFailure&&!pending.length)setSyncProgress(92,'최신 데이터 적용 중',hadState,'서버 응답을 받았습니다. 최신 데이터를 화면에 적용하고 있습니다.');
     safeApplyServerState_(res.data);
     readFailureStreak=0;
     hardConnectionDown=false;
@@ -1713,7 +1717,7 @@ async function bootstrap(showLoading=true,silentFailure=false){
     clearTimeout(reconnectTimer);
     reconnectTimer=null;
     migrateLegacyEventQueue_();
-    if(!silentFailure)setSyncProgress(96,'최신 데이터 적용 중',hadState,'최신 데이터를 기기에 저장하고 화면 반영을 준비하고 있습니다.');
+    if(!silentFailure&&!pending.length)setSyncProgress(96,'최신 데이터 적용 중',hadState,'최신 데이터를 기기에 저장하고 화면 반영을 준비하고 있습니다.');
     cacheState();
     // 캐시의 revision은 저장 직후 로컬에서도 갱신되므로 서버에서 실제
     // 전체 데이터 검증을 완료한 앱 버전을 별도 기록합니다.
@@ -1723,7 +1727,7 @@ async function bootstrap(showLoading=true,silentFailure=false){
     const today=new Date(currentTodayKey()+'T00:00:00');
     if(!viewMonth)viewMonth=new Date(today.getFullYear(),today.getMonth(),1);
 
-    if(!silentFailure)setSyncProgress(98,'화면 반영 중',hadState,'월별 편성·기도·설정 화면에 최신 데이터를 적용하고 있습니다.');
+    if(!silentFailure&&!pending.length)setSyncProgress(98,'화면 반영 중',hadState,'월별 편성·기도·설정 화면에 최신 데이터를 적용하고 있습니다.');
     renderSynced_();
     clearConnectionError();
     if(!silentFailure&&!pending.length){
@@ -1750,6 +1754,7 @@ async function bootstrap(showLoading=true,silentFailure=false){
     }
     logEvent('ERROR','BOOTSTRAP_FAIL',e&&e.message?e.message:String(e));
     showApiError(e&&e.message?e.message:String(e));
+    if(navigator.onLine)markReadFailure_(e);
     stopSyncProgress();
     return false;
   }finally{
@@ -1858,8 +1863,9 @@ async function verifyScheduleItems_(items,ackRevision){
 }
 
 async function flushQueue(){
-  if(flushing||!pending.length||readInFlight||!STATE)return;
   clearTimeout(retryTimer);retryTimer=null;
+  if(flushing||!pending.length||!STATE)return;
+  if(readInFlight){retryTimer=setTimeout(flushQueue,500);return}
   if(!navigator.onLine){setProcess('오프라인 · 저장 보류','offline');return}
   if(!scheduleServerReady_()){
     setProcess('일정 서버 업데이트 필요 · 저장 보류','error','서버 검증 기능 배포 후 자동 저장합니다.');
@@ -1867,6 +1873,10 @@ async function flushQueue(){
     return;
   }
   const first=pending[0],items=[first];
+  if(first.type==='rotationComplete'){
+    try{quarantineItems_([first],'legacy_rotation_requires_review');setProcess('이전 기본값 저장 검토 필요','error');}catch(e){logEvent('ERROR','LOCAL_SAVE_FAIL','legacy queue preservation failed')}
+    if(pending.length&&pending[0]!==first)retryTimer=setTimeout(flushQueue,100);return;
+  }
   if(['assignmentSet','eventSet'].includes(first.type)){
     for(let i=1;i<pending.length&&items.length<40;i++){
       if(!['assignmentSet','eventSet'].includes(pending[i].type))break;
@@ -2124,7 +2134,7 @@ function syncRuntimeMonth_(){
   const oldKey=runtimeMonthKey;
   runtimeMonthKey=nowKey;
 
-  if(viewMonth&&(monthKey(viewMonth)===oldKey||isOutsideHorizon(monthKey(viewMonth)))){
+  if(viewMonth&&!monthEdit&&(monthKey(viewMonth)===oldKey||isOutsideHorizon(monthKey(viewMonth)))){
     const d=new Date(currentTodayKey()+'T00:00:00');
     viewMonth=new Date(d.getFullYear(),d.getMonth(),1);
   }
@@ -2245,7 +2255,7 @@ function setMonthDraftAssignment(date,roleId,memberIds){
 }
 async function saveMonthDraft(){
   if(!monthEdit||monthSaveBusy||!requireFreshWrite_('월별 편성 저장'))return;
-  const changes=Object.values(monthDraft||{});
+  const changes=Object.values(monthDraft||{}).filter(x=>!pending.some(m=>m.id===x.id));
   if(!changes.length){discardMonthEdit(true);return}
   const items=changes.map(x=>{
     const m=makeMutation_('assignmentSet',{date:x.date,roleId:x.roleId,memberIds:x.memberIds},STATE,x.id);
@@ -2297,7 +2307,7 @@ async function saveMonthAsDefault(){
   if(pending.length){showToast('기존 저장 처리 후 기본값을 저장해 주세요');return}
   const snapshot=buildCurrentMonthSnapshot();
   if(!snapshot.dates.length){showToast('기본값으로 저장할 일정이 없습니다');return}
-  if(dateDraftChangedCount_(snapshot.month)>0){showToast('달력의 날짜 변경사항을 먼저 날짜 저장해 주세요');return}
+  if(Object.keys(dateDraftEditsByMonth[snapshot.month]||{}).length>0){showToast('달력의 날짜 변경사항을 먼저 날짜 저장해 주세요');return}
   if(!confirm('현재 화면에 보이는 편성을 이후 달 자동 편성의 기본값으로 저장할까요? 현재 월 편성 자체는 변경하지 않습니다.'))return;
   enqueueItems_([makeMutation_('rotationSnapshotSet',snapshot,STATE)]);
 }
@@ -2551,15 +2561,15 @@ async function syncPendingAfterYoutubeLinks_(silent=true){
   let retry=0,next=false;
   try{
     setAfterLinksGlobalProgress_('예배 후 찬양 링크 서버 확인','링크 변경분을 안전하게 병합합니다.',30);
-    const health=await scoreJsonp('health',30000);
-    if(!health||health.ok!==true||health.linkPatchVersion!==2||health.version!=='v3.22.0')throw Error('악보 서버 v3.22.0 업데이트 필요');
+    const health=await scoreJsonp('afterLinks',30000,{operationId:op.id});
+    if(!health||health.ok!==true||health.version!=='v3.22.0'||!Array.isArray(health.verifiedOperationIds))throw Error('악보 서버 v3.22.0 업데이트 필요');
     setAfterLinksGlobalProgress_('예배 후 찬양 링크 저장 중','추가·삭제 변경분만 저장합니다.',55);
     logEvent('INFO','CLOUD_SAVE_START',`scope=links id=${op.id} attempt=${Number(op.attempts||0)+1}`);
-    const res=await scorePost('afterLinksSet',{operationId:op.id,addsJson:JSON.stringify(op.adds),removesJson:JSON.stringify(op.removes)},30000);
+    const res=health.verifiedOperationIds.includes(op.id)?health:await scorePost('afterLinksSet',{operationId:op.id,addsJson:JSON.stringify(op.adds),removesJson:JSON.stringify(op.removes)},30000);
     if(!res||!res.ok||!(res.verifiedOperationIds||[]).includes(op.id))throw Error('링크 저장 응답 검증 실패');
     logEvent('INFO','CLOUD_SAVE_ACK',`scope=links id=${op.id} revision=${res.linksRevision}`);
     setAfterLinksGlobalProgress_('예배 후 찬양 링크 저장 검증 중','영구 저장소에서 다시 확인합니다.',82);
-    const verify=await scoreJsonp('afterLinks',30000);
+    const verify=await scoreJsonp('afterLinks',30000,{operationId:op.id});
     if(!verify||!verify.ok||!Array.isArray(verify.links)||!(verify.verifiedOperationIds||[]).includes(op.id)||Number(verify.linksRevision)<Number(res.linksRevision))throw Error('링크 DB 재조회 검증 실패');
     const remaining=getLinkQueue_().filter(x=>x.id!==op.id);
     if(!safeSet('after_links_ops_v2',JSON.stringify(remaining)))throw Error('링크 대기열 갱신 실패');
@@ -3201,21 +3211,21 @@ function blobToBase64(blob){
 
 function waitMs(ms){return new Promise(resolve=>setTimeout(resolve,ms))}
 
-function scoreJsonp(action,timeout=15000){
+function scoreJsonp(action,timeout=15000,params={}){
   // Read actions supported by both score API transports.
-  if(!['health','meta','afterMeta','afterLinks'].includes(action))return scoreJsonpScript_(action,timeout);
+  if(!['health','meta','afterMeta','afterLinks'].includes(action))return scoreJsonpScript_(action,timeout,params);
   return adaptiveRead_('score',action,{
-    jsonp:()=>scoreJsonpScript_(action,timeout),
-    post:()=>scorePost(action,{},timeout)
-  },2800);
+    jsonp:()=>scoreJsonpScript_(action,timeout,params),
+    post:()=>scorePost(action,params,timeout)
+  },action==='health'?8000:5000);
 }
 
-function scoreJsonpScript_(action,timeout=15000){
+function scoreJsonpScript_(action,timeout=15000,params={}){
   const started=performance.now();
   return new Promise((resolve,reject)=>{
     const cb='__scorecb_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2);
     const script=document.createElement('script');
-    const q=new URLSearchParams({action,callback:cb,_:String(Date.now())});
+    const q=new URLSearchParams({...params,action,callback:cb,_:String(Date.now())});
     let done=false;
     const timer=setTimeout(()=>finish(new Error('악보 서버 응답 시간이 초과되었습니다.')),timeout);
     function finish(err,data){
@@ -3392,10 +3402,7 @@ function getDateDraftSet_(mk){
 function dateDraftChangedCount_(mk){
   const original=new Set(selectedDates(mk));
   const draft=getDateDraftSet_(mk);
-  let count=0;
-  const all=new Set([...original,...draft]);
-  all.forEach(date=>{if(original.has(date)!==draft.has(date))count++});
-  return count;
+  return Object.keys(dateDraftEditsByMonth[mk]||{}).length;
 }
 function toggleEventDate(date){
   if(!requireFreshWrite_('날짜 수정'))return;
