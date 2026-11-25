@@ -80,7 +80,7 @@ function worshipBridgeOutput_(data, requestId) {
     '(function(){var m=' + safeJson + ';' +
     'try{window.top.postMessage(m,"*");}catch(e){}' +
     'try{window.parent.postMessage(m,"*");}catch(e){}' +
-    '})();<\\/script></body></html>';
+    '})();<\/script></body></html>';
   return HtmlService.createHtmlOutput(html)
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
