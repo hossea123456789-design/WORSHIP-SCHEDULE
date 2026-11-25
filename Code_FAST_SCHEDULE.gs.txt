@@ -236,8 +236,7 @@ function worshipSaveHonorificOptions_(ss, p, now) {
 
   const blocked = Object.keys(removedInUse);
   if (blocked.length) {
-    const detail = blocked.map(title => title + ': ' + removedInUse[title].filter(Boolean).join(', ')).join(' / ');
-    throw new Error('사용 중인 호칭은 삭제할 수 없습니다. 먼저 해당 멤버의 호칭을 변경해주세요. (' + detail + ')');
+    throw new Error('사용 중인 호칭은 삭제할 수 없습니다. 먼저 해당 멤버의 호칭을 변경해주세요.');
   }
 
   worshipSetConfigValue_(
@@ -580,15 +579,15 @@ function worshipFreshBootstrap_(){
   lock.waitLock(10000);
   try{
     const data=worshipBuildBootstrapData_(worshipDb_());
-    worshipWriteSnapshot_(data);
     return {ok:true,data,source:'sheets'};
   }finally{lock.releaseLock()}
 }
 
 function worshipPrecondition_(data,m,expectedRevision){
   if(Object.prototype.hasOwnProperty.call(m,'base')){
-    if(JSON.stringify(worshipTarget_(data,m))!==JSON.stringify(m.base))return false;
-    return true;
+    const actual=worshipTarget_(data,m);
+    if(JSON.stringify(actual)===JSON.stringify(m.base))return true;
+    try{return worshipVerifiedTarget_(data,m,worshipExpectedTarget_(data,m))}catch(_){return false}
   }
   return Number(expectedRevision)===Number(data.revision);
 }
@@ -652,7 +651,7 @@ function worshipMutateBatch_(batch){
     const revision=worshipIncrementRevision_(ss,now);
     worshipAppendMutationLogs_(ss,applied.map(m=>({...m,type:'verified:'+m.type})),now);
     SpreadsheetApp.flush();
-    try{worshipWriteSnapshot_(worshipBuildBootstrapData_(ss))}catch(_){}
+    try{worshipClearSnapshot_()}catch(_){}
     return {ok:true,revision,appliedCount:applied.length,duplicateCount:items.length-applied.length};
   }catch(err){
     if(dirty&&ss)worshipInvalidateAfterFailure_(ss);
@@ -816,7 +815,7 @@ function worshipMutate_(mutation){
     const revision=worshipIncrementRevision_(ss,now);
     worshipAppendMutationLog_(ss,String(m.id),String(m.clientId||''),legacyRotation?type:'verified:'+type,now);
     SpreadsheetApp.flush();
-    try{worshipWriteSnapshot_(worshipBuildBootstrapData_(ss))}catch(_){}
+    try{worshipClearSnapshot_()}catch(_){}
     return {ok:true,revision,structural:!['assignmentSet','eventSet'].includes(type)};
   }catch(err){
     if(dirty&&ss)worshipInvalidateAfterFailure_(ss);
