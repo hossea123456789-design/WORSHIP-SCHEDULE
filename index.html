@@ -129,7 +129,7 @@ main{padding:15px 15px 36px}.panel{display:none}.panel.active{display:block}.sec
 <div class="app">
 <header><div class="headerRow"><div class="brand"><div class="logo">WORSHIP</div><div><h1>주일 찬양팀 스케줄</h1></div></div><div class="headerIndicators"><span class="headerConnectionDot" id="headerConnectionDot" role="status" aria-label="연결 완료" aria-hidden="true"></span><button class="todayPill" id="todayPill" type="button" title="이번 달 편성표로 이동" aria-label="오늘 기준 월별 편성표로 이동">-</button></div></div></header>
 <main>
-<div class="errorBanner" id="errorBanner"><span id="errorBannerText"></span><button class="ghostBtn" id="retryConnection">다시 시도</button></div>
+<div class="errorBanner" id="errorBanner"><span id="errorBannerText"></span><button class="ghostBtn" id="retryConnection">다시 시도</button><button class="ghostBtn" id="probeConnection" type="button">서버 직접 확인</button></div>
 <section id="tab-week" class="panel active"><div class="sectionTitle"><h2>이번 주 / 다음 주</h2></div><div id="weekCards">
 <div class="card weekCard"><div class="weekHead"><div class="weekTitle">이번 주<span class="weekBadge">THIS WEEK</span></div><div class="dateLine">일정을 불러오는 중</div></div><div class="weekRoles"><div class="weekRole"><div class="roleLabel"><span class="roleDot"></span><span class="skeleton" style="width:58px;height:15px;border-radius:7px"></span></div><div class="people"><span class="person skeleton" style="width:72px"></span></div></div><div class="weekRole"><div class="roleLabel"><span class="roleDot"></span><span class="skeleton" style="width:72px;height:15px;border-radius:7px"></span></div><div class="people"><span class="person skeleton" style="width:84px"></span></div></div><div class="weekRole"><div class="roleLabel"><span class="roleDot"></span><span class="skeleton" style="width:52px;height:15px;border-radius:7px"></span></div><div class="people"><span class="person skeleton" style="width:68px"></span></div></div></div></div>
 <div class="card weekCard"><div class="weekHead"><div class="weekTitle">다음 주<span class="weekBadge">NEXT WEEK</span></div><div class="dateLine">일정을 불러오는 중</div></div><div class="weekRoles"><div class="weekRole"><div class="roleLabel"><span class="roleDot"></span><span class="skeleton" style="width:58px;height:15px;border-radius:7px"></span></div><div class="people"><span class="person skeleton" style="width:72px"></span></div></div><div class="weekRole"><div class="roleLabel"><span class="roleDot"></span><span class="skeleton" style="width:72px;height:15px;border-radius:7px"></span></div><div class="people"><span class="person skeleton" style="width:84px"></span></div></div></div></div>
@@ -176,7 +176,7 @@ const DEFAULT_HONORIFICS=['집사님','목사님','사모님','권사님','장�
 const APP_PUBLIC_URL='https://hossea123456789-design.github.io/WORSHIP-SCHEDULE/';
 const KAKAO_JAVASCRIPT_KEY='c14b7dd534f10ac1fc266ba52c9e7a56';
 const STORAGE_PREFIX='worship_fast_v3_';
-const APP_VERSION='v3.22.1';
+const APP_VERSION='v3.22.2';
 let serverState_=null,modalBaseState_=null,deferredRender_=false,interactionPointer_=false,dateDraftBases_={};
 const serverVersions_={schedule:'unknown',score:'unknown'};
 const BOOTSTRAP_TIMEOUT_MS=25000;
@@ -225,6 +225,8 @@ let hardConnectionDown=false;
 let readFailureStreak=0;
 let lastReadSuccessAt=0;
 let reconnectTimer=null;
+let reconnectNotBefore_=0;
+let connectionProbeRoute_='';
 let lastRevisionCheckAt=0;
 let serverFresh=false;
 let runtimeMonthKey=monthKey(new Date());
@@ -895,7 +897,7 @@ function updateLogMeta(){
   el.textContent=`앱 ${APP_VERSION} · 일정 서버 ${serverVersions_.schedule} · 악보 서버 ${serverVersions_.score} · 대기 ${pending.length}건 · 충돌 ${getConflicts_().length}건 · 로그 ${a.length}건 · 상태: ${processStatus}`+(lastErr?` · 마지막 오류: ${lastErr.event}`:'');
 }
 function diagnosticContext_(){
-  return {appVersion:APP_VERSION,serverVersions:{...serverVersions_},online:navigator.onLine,url:location.origin+location.pathname,userAgent:navigator.userAgent,cookieEnabled:navigator.cookieEnabled,secureContext:window.isSecureContext,visibility:document.visibilityState,localRevision:STATE&&STATE.revision,serverRevision:serverState_&&serverState_.revision,lastReadSuccessAt:lastReadSuccessAt?new Date(lastReadSuccessAt).toISOString():null,pending:pending.length,verifiedPending:pending.filter(m=>m.ackRevision).length,linkPending:getLinkQueue_().length,legacyLinkPending:!!legacyLinkPending_(),conflicts:getConflicts_().length,monthDraftCount:Object.keys(monthDraft||{}).length,dateDraftCount:Object.values(dateDraftEditsByMonth).reduce((n,x)=>n+Object.keys(x).length,0),routeSchedule:getReadRoute_('schedule'),routeScore:getReadRoute_('score'),readInFlight,flushing,status:processStatus};
+  return {appVersion:APP_VERSION,serverVersions:{...serverVersions_},online:navigator.onLine,url:location.origin+location.pathname,userAgent:navigator.userAgent,cookieEnabled:navigator.cookieEnabled,secureContext:window.isSecureContext,visibility:document.visibilityState,localRevision:STATE&&STATE.revision,serverRevision:serverState_&&serverState_.revision,lastReadSuccessAt:lastReadSuccessAt?new Date(lastReadSuccessAt).toISOString():null,pending:pending.length,verifiedPending:pending.filter(m=>m.ackRevision).length,linkPending:getLinkQueue_().length,legacyLinkPending:!!legacyLinkPending_(),conflicts:getConflicts_().length,monthDraftCount:Object.keys(monthDraft||{}).length,dateDraftCount:Object.values(dateDraftEditsByMonth).reduce((n,x)=>n+Object.keys(x).length,0),routeSchedule:getReadRoute_('schedule'),lastSuccessfulScheduleRoute:connectionProbeRoute_||null,retryNotBefore:reconnectNotBefore_?new Date(reconnectNotBefore_).toISOString():null,routeScore:getReadRoute_('score'),readInFlight,flushing,status:processStatus};
 }
 function downloadLogs_(){
   const blob=new Blob([JSON.stringify({copiedAt:new Date().toISOString(),...diagnosticContext_(),events:readLogs()},null,2)],{type:'application/json'});
@@ -1161,6 +1163,7 @@ function jsonpScript(action,params={},timeout=15000,options={}){
 
     window[cb]=data=>finish(null,data);
     script.onerror=()=>{
+      if(done)return;
       logEvent('WARN','JSONP_RESOURCE_ERROR',`scope=schedule action=${action} online=${navigator.onLine} elapsed=${Math.round(performance.now()-started)}ms`);
       if(!options.quietFailure)logEvent(options.background?'WARN':'ERROR','API_SCRIPT_ERROR',`action=${action} online=${navigator.onLine} host=${new URL(API_URL).host}`);
       finish(new Error('Apps Script API에 연결하지 못했습니다.'));
@@ -1230,6 +1233,15 @@ function worshipIframePost(action,params={},timeout=15000,options={}){
     const timer=setTimeout(()=>finish(new Error('POST 대체 경로 응답 시간이 초과되었습니다.')),timeout);
 
     window.addEventListener('message',onMessage);
+    let frameLoads=0;
+    iframe.onload=()=>{
+      if(done)return;
+      frameLoads++;
+      let origin='cross-origin/opaque';
+      try{origin=iframe.contentWindow.location.origin}catch(e){}
+      logEvent('INFO','API_POST_FRAME_LOAD',`action=${action} count=${frameLoads} origin=${origin}`);
+    };
+    iframe.onerror=()=>{if(!done)logEvent('WARN','API_POST_FRAME_ERROR',`action=${action}`)};
     document.body.appendChild(iframe);
     document.body.appendChild(form);
     try{form.submit()}catch(e){finish(e)}
@@ -1249,9 +1261,27 @@ function rememberReadRoute_(scope,route){
   safeSet('api_read_route_'+scope,route);
 }
 
+async function fetchScheduleRead_(action,params,timeout){
+  // Read only, never change the server's access permissions or retry a write.
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),Math.min(timeout,12000));
+  try{
+    const q=new URLSearchParams({app:'worship',action,_:String(Date.now()),...params});
+    const res=await fetch(API_URL+'?'+q.toString(),{method:'GET',mode:'cors',credentials:'omit',cache:'no-store',redirect:'follow',signal:controller.signal});
+    logEvent('INFO','API_FETCH_RESPONSE',`action=${action} status=${res.status} redirected=${res.redirected} type=${(res.headers.get('content-type')||'').split(';')[0]}`);
+    if(!res.ok)throw Error('HTTP '+res.status);
+    const data=await res.json();
+    return data;
+  }catch(e){
+    logEvent('WARN','API_FETCH_FAIL',`action=${action} type=${e&&e.name||'Error'}`);
+    throw Error(e&&e.name==='AbortError'?'FETCH 응답 시간 초과':'FETCH 응답 확인 실패 (네트워크/CORS/접근 제한 가능)');
+  }finally{clearTimeout(timer)}
+}
+
 function adaptiveRead_(scope,action,transports,hedgeDelay){
   const first=getReadRoute_(scope);
   const routes=[first,first==='jsonp'?'post':'jsonp'];
+  if(typeof transports.fetch==='function')routes.push('fetch');
   const started=performance.now();
   return new Promise((resolve,reject)=>{
     let settled=false,launched=0,failed=0,hedgeTimer=null;
@@ -1267,7 +1297,7 @@ function adaptiveRead_(scope,action,transports,hedgeDelay){
       }
       if(failed===routes.length&&!settled){
         settled=true;clearTimeout(hedgeTimer);
-        const msg=`${scope==='schedule'?'일정':'악보'} 서버 연결 실패 · JSONP: ${errors.jsonp} · POST: ${errors.post}`;
+        const msg=`${scope==='schedule'?'일정':'악보'} 서버 연결 실패 · JSONP: ${errors.jsonp} · POST: ${errors.post}${errors.fetch?' · FETCH: '+errors.fetch:''}`;
         logEvent('WARN','API_READ_FAIL',`scope=${scope} action=${action} attempts=${launched} ms=${Math.round(performance.now()-started)} msg=${msg}`);
         reject(new Error(msg));
       }
@@ -1276,6 +1306,7 @@ function adaptiveRead_(scope,action,transports,hedgeDelay){
       if(settled||launched>=routes.length)return;
       const route=routes[launched++];
       logEvent('INFO',launched===1?'API_READ_START':'API_READ_FALLBACK',`scope=${scope} action=${action} route=${route} attempt=${launched} reason=${reason}`);
+      if(launched<routes.length){clearTimeout(hedgeTimer);hedgeTimer=setTimeout(()=>launch('slow_response'),launched===1?hedgeDelay:3000)}
       Promise.resolve().then(()=>transports[route]()).then(data=>{
         if(settled)return;
         if(!data||typeof data!=='object'||typeof data.ok!=='boolean'){
@@ -1283,13 +1314,13 @@ function adaptiveRead_(scope,action,transports,hedgeDelay){
         }
         settled=true;clearTimeout(hedgeTimer);
         observeServer_(scope,data);
-        if(data.ok===true)rememberReadRoute_(scope,route);
+        if(data.ok===true&&route!=='fetch')rememberReadRoute_(scope,route);
+        if(data.ok===true&&scope==='schedule')connectionProbeRoute_=route;
         logEvent(data.ok?'INFO':'WARN',data.ok?'API_READ_OK':'API_SERVER_ERROR',`scope=${scope} action=${action} route=${route} ms=${Math.round(performance.now()-started)}${data.ok?'':' msg='+String(data.error||'서버 오류')}`);
         resolve(data);
       },err=>fail(route,err));
     };
     launch('preferred');
-    hedgeTimer=setTimeout(()=>launch('slow_response'),hedgeDelay);
   });
 }
 
@@ -1298,7 +1329,8 @@ async function readApi(action,params={},timeout=12000,options={}){
   const transportOptions={...options,background:true,quietFailure:true,quietSuccess:true};
   const data=await adaptiveRead_('schedule',action,{
     jsonp:()=>jsonpScript(action,params,timeout,transportOptions),
-    post:()=>worshipIframePost(action,params,timeout,transportOptions)
+    post:()=>worshipIframePost(action,params,timeout,transportOptions),
+    ...(['bootstrap','revision','readback'].includes(action)&&typeof fetch==='function'&&typeof AbortController==='function'?{fetch:()=>fetchScheduleRead_(action,params,timeout)}:{})
   },hedgeDelay);
   if(data.ok){
     readFailureStreak=0;
@@ -1686,6 +1718,7 @@ function reconnectDelayMs_(){
 function scheduleReconnect_(reason=''){
   clearTimeout(reconnectTimer);
   const delay=reconnectDelayMs_();
+  reconnectNotBefore_=Date.now()+delay;
   logEvent('INFO','RECONNECT_SCHEDULE',`delay=${delay}ms reason=${reason}`);
   if(STATE){
     const target=Math.min(96,82+Math.min(readFailureStreak,5)*3);
@@ -1699,7 +1732,9 @@ function scheduleReconnect_(reason=''){
   }
   reconnectTimer=setTimeout(()=>{
     reconnectTimer=null;
-    if(STATE)pollRevision(true);else if(navigator.onLine)bootstrap(false,true);
+    reconnectNotBefore_=0;
+    if(document.visibilityState==='hidden'||!navigator.onLine)return;
+    if(STATE)pollRevision(true);else bootstrap(false,true);
   },delay);
 }
 function markReadFailure_(e){
@@ -1721,6 +1756,8 @@ async function bootstrap(showLoading=true,silentFailure=false){
     logEvent('INFO','BOOTSTRAP_DEFER','read in flight');
     return false;
   }
+  if(silentFailure&&(document.visibilityState==='hidden'||!navigator.onLine||Date.now()<reconnectNotBefore_))return false;
+  clearTimeout(reconnectTimer);reconnectTimer=null;reconnectNotBefore_=0;
 
   readInFlight=true;
   const started=performance.now();
@@ -1742,7 +1779,7 @@ async function bootstrap(showLoading=true,silentFailure=false){
     serverFresh=true;
     lastReadSuccessAt=Date.now();
     clearTimeout(reconnectTimer);
-    reconnectTimer=null;
+    reconnectTimer=null;reconnectNotBefore_=0;
     migrateLegacyEventQueue_();
     if(!silentFailure&&!pending.length)setSyncProgress(96,'최신 데이터 적용 중',hadState,'최신 데이터를 기기에 저장하고 화면 반영을 준비하고 있습니다.');
     cacheState();
@@ -4108,6 +4145,7 @@ document.getElementById('downloadLog').onclick=downloadLogs_;
 document.getElementById('reviewConflicts').onclick=reviewConflicts_;
 document.getElementById('reviewLegacyLinks').onclick=reviewLegacyLinks_;
 document.getElementById('retryConnection').onclick=()=>bootstrap(false);
+document.getElementById('probeConnection').onclick=()=>{logEvent('INFO','API_DIRECT_PROBE','scope=schedule action=revision');window.open(API_URL+'?app=worship&action=revision','_blank','noopener,noreferrer')};
 document.getElementById('scoreUploadBtn').onclick=()=>document.getElementById('scoreFileInput').click();
 document.getElementById('scoreFileInput').onchange=e=>uploadScoreFile(e.target.files&&e.target.files[0]);
 document.getElementById('afterScoreUploadBtn').onclick=()=>document.getElementById('afterScoreFileInput').click();
@@ -4161,7 +4199,7 @@ document.querySelectorAll('.navBtn').forEach(b=>b.onclick=()=>{
 });
 
 async function pollRevision(force=false){
-  if(!navigator.onLine||flushing||readInFlight||document.visibilityState==='hidden')return;
+  if(!navigator.onLine||flushing||readInFlight||document.visibilityState==='hidden'||Date.now()<reconnectNotBefore_)return;
   if(!STATE){await bootstrap(false,true);return}
   const now=Date.now();
   if(!force&&now-lastRevisionCheckAt<25000)return;
@@ -4175,7 +4213,7 @@ async function pollRevision(force=false){
     if(!serverState_||Number(r.revision)!==Number(serverState_.revision)||needsFullRefresh||safeGet('lastFullBootstrapVersion')!==APP_VERSION)refresh=true;
     else{
       serverFresh=true;hardConnectionDown=false;readFailureStreak=0;lastReadSuccessAt=Date.now();
-      clearTimeout(reconnectTimer);reconnectTimer=null;
+      clearTimeout(reconnectTimer);reconnectTimer=null;reconnectNotBefore_=0;
       finishScheduleConnection_('revision_match');
       if(!pending.length&&!isInteractionActive_())scheduleScoreMetaWarm_();
     }
@@ -4249,7 +4287,7 @@ pollTimer=setInterval(()=>{
 window.addEventListener('online',()=>{
   logEvent('INFO','NETWORK','online');
   clearTimeout(reconnectTimer);
-  reconnectTimer=null;
+  reconnectTimer=null;reconnectNotBefore_=0;
   clearTimeout(retryTimer);retryTimer=null;
   if(STATE)pollRevision(true);
   else bootstrap(false);
