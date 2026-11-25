@@ -16,7 +16,7 @@
  * - https://www.googleapis.com/auth/script.external_request
  */
 
-const SCORE_API_VERSION = 'v3.12.9';
+const SCORE_API_VERSION = 'v3.22.0';
 
 const SCORE_REQUIRED_SCOPES = Object.freeze([
   'https://www.googleapis.com/auth/drive',
@@ -139,7 +139,7 @@ function doGet(e) {
         ok: true,
         service: SCORE_STORE.APP,
         version: SCORE_API_VERSION,
-        links: getAfterYoutubeLinks_()
+        ...getAfterYoutubeLinks_()
       };
     } else {
       data = {
@@ -198,7 +198,7 @@ function doPost(e) {
         ok: true,
         service: SCORE_STORE.APP,
         version: SCORE_API_VERSION,
-        links: getAfterYoutubeLinks_()
+        ...getAfterYoutubeLinks_()
       }, requestId);
     }
     if (action === 'afterLinksSet') {
@@ -206,7 +206,7 @@ function doPost(e) {
         ok: true,
         service: SCORE_STORE.APP,
         version: SCORE_API_VERSION,
-        links: setAfterYoutubeLinks_(p.linksJson)
+        ...setAfterYoutubeLinks_(p)
       }, requestId);
     }
     if (action === 'afterUploadDirect') {
@@ -219,7 +219,7 @@ function doPost(e) {
       return scoreReply_(uploadAfterScoreChunk_(p), requestId);
     }
     if (action === 'afterDelete') {
-      deleteAfterScore_();
+      deleteAfterScore_(p);
       return scoreReply_({
         ok: true,
         service: SCORE_STORE.APP,
@@ -238,7 +238,7 @@ function doPost(e) {
       return scoreReply_(uploadScoreChunk_(p), requestId);
     }
     if (action === 'delete') {
-      deleteCurrentScore_();
+      deleteCurrentScore_(p);
       return scoreReply_({
         ok: true,
         service: SCORE_STORE.APP,
@@ -284,6 +284,8 @@ function scoreHealth_() {
     version: SCORE_API_VERSION,
     storageReady: true,
     afterLinksStorage: 'drive+properties',
+    linkPatchVersion: 2,
+    scoreCompareAndSwap: true,
     capabilities: ['meta','uploadDirect','uploadStart','uploadChunk','delete','afterMeta','afterUploadDirect','afterUploadStart','afterUploadChunk','afterDelete','afterLinks','afterLinksSet'],
     folderId: folder.getId(),
     afterLinkFolderId: afterLinkFolder.getId(),
@@ -332,6 +334,8 @@ function verifyDriveApiWriteScope_(folder) {
 
 function uploadScoreDirect_(p) {
   cleanupStaleScoreUploads_();
+  const op=scorePrepareUpload_(p,false);
+  if(op.duplicate)return {ok:true,complete:true,transport:'direct',file:op.duplicate,receivedBytes:op.duplicate.size};
 
   const fileName = sanitizeScoreFileName_(String(p.fileName || '').trim());
   const mimeType = normalizeScoreMime_(String(p.mimeType || ''), fileName);
@@ -356,7 +360,7 @@ function uploadScoreDirect_(p) {
 
   try {
     makeScoreFilePublic_(file);
-    const updatedAt = finalizeCurrentScore_(file, fileName, mimeType);
+    const updatedAt = finalizeCurrentScore_(file, fileName, mimeType, op);
     return {
       ok: true,
       service: SCORE_STORE.APP,
@@ -374,6 +378,8 @@ function uploadScoreDirect_(p) {
 
 function startScoreUpload_(p) {
   cleanupStaleScoreUploads_();
+  const op=scorePrepareUpload_(p,false);
+  if(op.duplicate)return {ok:true,complete:true,file:op.duplicate};
 
   const fileName = sanitizeScoreFileName_(String(p.fileName || '').trim());
   const mimeType = normalizeScoreMime_(String(p.mimeType || ''), fileName);
@@ -424,6 +430,8 @@ function startScoreUpload_(p) {
   const uploadId = Utilities.getUuid();
   const meta = {
     uploadId: uploadId,
+    operationId:op.operationId,
+    expectedFileId:op.expectedFileId,
     sessionUrl: sessionUrl,
     fileName: fileName,
     mimeType: mimeType,
@@ -563,7 +571,8 @@ function uploadScoreChunk_(p) {
       const updatedAt = finalizeCurrentScore_(
         file,
         String(meta.fileName || file.getName()),
-        String(meta.mimeType || file.getMimeType())
+        String(meta.mimeType || file.getMimeType()),
+        meta
       );
 
       meta.complete = true;
@@ -614,111 +623,77 @@ function makeScoreFilePublic_(file) {
   }
 }
 
-function finalizeCurrentScore_(newFile, fileName, mimeType) {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(10000);
-
-  try {
-    const props = PropertiesService.getScriptProperties();
-    const folder = getScoreFolder_(true);
-    const updatedAt = Utilities.formatDate(
-      new Date(),
-      Session.getScriptTimeZone() || 'Asia/Seoul',
-      'yyyy-MM-dd HH:mm:ss'
-    );
-
-    props.setProperties({
-      [SCORE_STORE.FILE_PROP]: newFile.getId(),
-      [SCORE_STORE.NAME_PROP]: fileName || newFile.getName(),
-      [SCORE_STORE.MIME_PROP]: mimeType || newFile.getMimeType(),
-      [SCORE_STORE.UPDATED_PROP]: updatedAt
-    }, true);
-
-    const files = folder.getFiles();
-    while (files.hasNext()) {
-      const oldFile = files.next();
-      if (oldFile.getId() !== newFile.getId()) {
-        try { oldFile.setTrashed(true); } catch (_) {}
-      }
+function scoreCurrentMetaLocked_(after){
+  const props=PropertiesService.getScriptProperties(),store=after?AFTER_SCORE_STORE:SCORE_STORE;
+  const prop=store.FILE_PROP,raw=props.getProperty(prop);
+  if(raw==='__EMPTY__')return null;
+  if(raw){
+    const file=DriveApp.getFileById(raw);
+    if(file.isTrashed())throw Error('현재 악보 파일 접근 실패 · 기존 정보 유지');
+    return {...buildScoreMeta_(file,String(props.getProperty(store.UPDATED_PROP)||'')),operationId:String(props.getProperty(prop+'_OPERATION')||'')};
+  }
+  // One-time migration only, under lock. Never infer a new current file
+  // from an upload that has not been finalized.
+  const folder=after?getAfterScoreFolder_(false):getScoreFolder_(false);
+  let newest=null,latest=-1;
+  if(folder){
+    const files=folder.getFiles();
+    while(files.hasNext()){
+      const file=files.next();if(file.isTrashed())continue;
+      const t=file.getLastUpdated().getTime();if(t>latest){latest=t;newest=file}
     }
+  }
+  if(!newest){props.setProperty(prop,'__EMPTY__');return null}
+  const time=Utilities.formatDate(newest.getLastUpdated(),Session.getScriptTimeZone()||'Asia/Seoul','yyyy-MM-dd HH:mm:ss');
+  props.setProperties({[prop]:newest.getId(),[store.NAME_PROP]:newest.getName(),[store.MIME_PROP]:newest.getMimeType(),[store.UPDATED_PROP]:time},false);
+  return {...buildScoreMeta_(newest,time),operationId:''};
+}
 
+function scoreReadMeta_(after){
+  const lock=LockService.getScriptLock();lock.waitLock(10000);
+  try{return scoreCurrentMetaLocked_(after)}finally{lock.releaseLock()}
+}
+
+function scorePrepareUpload_(p,after){
+  const id=String(p.operationId||''),expected=String(p.expectedFileId||'');
+  if(!/^upload_[a-zA-Z0-9_]{8,100}$/.test(id)||!Object.prototype.hasOwnProperty.call(p,'expectedFileId'))throw Error('악보 서버 최신 앱에서 다시 업로드해주세요.');
+  const lock=LockService.getScriptLock();lock.waitLock(10000);
+  try{
+    const current=scoreCurrentMetaLocked_(after);
+    if(current&&current.operationId===id)return {operationId:id,expectedFileId:expected,duplicate:current};
+    if(String(current&&current.id||'')!==expected)throw Error('악보 충돌 · 다른 기기에서 교체했습니다. 최신 악보 확인 후 다시 시도해주세요.');
+    return {operationId:id,expectedFileId:expected};
+  }finally{lock.releaseLock()}
+}
+
+function scoreFinalize_(newFile,fileName,mimeType,op,after){
+  const lock=LockService.getScriptLock();lock.waitLock(10000);
+  try{
+    const current=scoreCurrentMetaLocked_(after),props=PropertiesService.getScriptProperties(),store=after?AFTER_SCORE_STORE:SCORE_STORE;
+    if(!op||!op.operationId||String(current&&current.id||'')!==String(op.expectedFileId||''))throw Error('악보 충돌 · 다른 기기에서 교체했습니다. 최신 악보 확인 후 다시 시도해주세요.');
+    if(newFile.isTrashed())throw Error('새 악보가 정상적으로 보관되지 않았습니다.');
+    const updatedAt=Utilities.formatDate(new Date(),Session.getScriptTimeZone()||'Asia/Seoul','yyyy-MM-dd HH:mm:ss');
+    props.setProperties({[store.FILE_PROP]:newFile.getId(),[store.NAME_PROP]:fileName||newFile.getName(),[store.MIME_PROP]:mimeType||newFile.getMimeType(),[store.UPDATED_PROP]:updatedAt,[store.FILE_PROP+'_OPERATION']:op.operationId},false);
+    // Only remove the prior committed file; another device may be staging a file.
+    if(current&&current.id!==newFile.getId())try{DriveApp.getFileById(current.id).setTrashed(true)}catch(_){}
     return updatedAt;
-  } finally {
-    lock.releaseLock();
-  }
+  }finally{lock.releaseLock()}
 }
 
-function deleteCurrentScore_() {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(10000);
-
-  try {
-    const folder = getScoreFolder_(false);
-    if (folder) {
-      const files = folder.getFiles();
-      while (files.hasNext()) {
-        try { files.next().setTrashed(true); } catch (_) {}
-      }
-    }
-    clearCurrentScoreProps_();
-  } finally {
-    lock.releaseLock();
-  }
+function scoreDelete_(p,after){
+  const lock=LockService.getScriptLock();lock.waitLock(10000);
+  try{
+    const current=scoreCurrentMetaLocked_(after),props=PropertiesService.getScriptProperties(),store=after?AFTER_SCORE_STORE:SCORE_STORE;
+    if(!Object.prototype.hasOwnProperty.call(p,'expectedFileId')||String(current&&current.id||'')!==String(p.expectedFileId||''))throw Error('악보 삭제는 최신 파일을 확인한 뒤 다시 시도해주세요.');
+    props.setProperty(store.FILE_PROP,'__EMPTY__');
+    props.deleteProperty(store.FILE_PROP+'_OPERATION');
+    if(current)try{DriveApp.getFileById(current.id).setTrashed(true)}catch(_){}
+  }finally{lock.releaseLock()}
 }
 
-function getCurrentScoreMeta_() {
-  const props = PropertiesService.getScriptProperties();
-  const fileId = String(props.getProperty(SCORE_STORE.FILE_PROP) || '');
-
-  if (fileId) {
-    try {
-      const file = DriveApp.getFileById(fileId);
-      if (!file.isTrashed()) {
-        return buildScoreMeta_(
-          file,
-          String(props.getProperty(SCORE_STORE.UPDATED_PROP) || '')
-        );
-      }
-    } catch (_) {}
-    clearCurrentScoreProps_();
-  }
-
-  const folder = getScoreFolder_(false);
-  if (!folder) return null;
-
-  const files = folder.getFiles();
-  let newest = null;
-  let newestTime = -1;
-
-  while (files.hasNext()) {
-    const file = files.next();
-    try {
-      if (file.isTrashed()) continue;
-      const t = file.getLastUpdated().getTime();
-      if (t > newestTime) {
-        newest = file;
-        newestTime = t;
-      }
-    } catch (_) {}
-  }
-
-  if (!newest) return null;
-
-  const updatedAt = Utilities.formatDate(
-    newest.getLastUpdated(),
-    Session.getScriptTimeZone() || 'Asia/Seoul',
-    'yyyy-MM-dd HH:mm:ss'
-  );
-
-  props.setProperties({
-    [SCORE_STORE.FILE_PROP]: newest.getId(),
-    [SCORE_STORE.NAME_PROP]: newest.getName(),
-    [SCORE_STORE.MIME_PROP]: newest.getMimeType(),
-    [SCORE_STORE.UPDATED_PROP]: updatedAt
-  }, true);
-
-  return buildScoreMeta_(newest, updatedAt);
-}
+function getCurrentScoreMeta_(){return scoreReadMeta_(false)}
+function finalizeCurrentScore_(file,name,mime,op){return scoreFinalize_(file,name,mime,op,false)}
+function deleteCurrentScore_(p){return scoreDelete_(p,false)}
 
 function clearCurrentScoreProps_() {
   const props = PropertiesService.getScriptProperties();
@@ -880,106 +855,14 @@ function clearAfterScoreProps_() {
   props.deleteProperty(AFTER_SCORE_STORE.UPDATED_PROP);
 }
 
-function getAfterScoreMeta_() {
-  const props = PropertiesService.getScriptProperties();
-  const fileId = String(props.getProperty(AFTER_SCORE_STORE.FILE_PROP) || '');
-
-  if (fileId) {
-    try {
-      const file = DriveApp.getFileById(fileId);
-      if (!file.isTrashed()) {
-        return buildScoreMeta_(
-          file,
-          String(props.getProperty(AFTER_SCORE_STORE.UPDATED_PROP) || '')
-        );
-      }
-    } catch (_) {}
-    clearAfterScoreProps_();
-  }
-
-  const folder = getAfterScoreFolder_(false);
-  if (!folder) return null;
-
-  const files = folder.getFiles();
-  let newest = null;
-  let newestTime = -1;
-  while (files.hasNext()) {
-    const file = files.next();
-    try {
-      if (file.isTrashed()) continue;
-      const t = file.getLastUpdated().getTime();
-      if (t > newestTime) {
-        newest = file;
-        newestTime = t;
-      }
-    } catch (_) {}
-  }
-  if (!newest) return null;
-
-  const updatedAt = Utilities.formatDate(
-    newest.getLastUpdated(),
-    Session.getScriptTimeZone() || 'Asia/Seoul',
-    'yyyy-MM-dd HH:mm:ss'
-  );
-  props.setProperties({
-    [AFTER_SCORE_STORE.FILE_PROP]: newest.getId(),
-    [AFTER_SCORE_STORE.NAME_PROP]: newest.getName(),
-    [AFTER_SCORE_STORE.MIME_PROP]: newest.getMimeType(),
-    [AFTER_SCORE_STORE.UPDATED_PROP]: updatedAt
-  }, true);
-  return buildScoreMeta_(newest, updatedAt);
-}
-
-function finalizeAfterScore_(newFile, fileName, mimeType) {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(10000);
-  try {
-    const props = PropertiesService.getScriptProperties();
-    const folder = getAfterScoreFolder_(true);
-    const updatedAt = Utilities.formatDate(
-      new Date(),
-      Session.getScriptTimeZone() || 'Asia/Seoul',
-      'yyyy-MM-dd HH:mm:ss'
-    );
-    props.setProperties({
-      [AFTER_SCORE_STORE.FILE_PROP]: newFile.getId(),
-      [AFTER_SCORE_STORE.NAME_PROP]: fileName || newFile.getName(),
-      [AFTER_SCORE_STORE.MIME_PROP]: mimeType || newFile.getMimeType(),
-      [AFTER_SCORE_STORE.UPDATED_PROP]: updatedAt
-    }, true);
-
-    const files = folder.getFiles();
-    while (files.hasNext()) {
-      const oldFile = files.next();
-      if (oldFile.getId() !== newFile.getId()) {
-        try { oldFile.setTrashed(true); } catch (_) {}
-      }
-    }
-    return updatedAt;
-  } finally {
-    lock.releaseLock();
-  }
-}
-
-function deleteAfterScore_() {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(10000);
-  try {
-    const folder = getAfterScoreFolder_(false);
-    if (folder) {
-      const files = folder.getFiles();
-      while (files.hasNext()) {
-        try { files.next().setTrashed(true); } catch (_) {}
-      }
-    }
-    clearAfterScoreProps_();
-  } finally {
-    lock.releaseLock();
-  }
-}
+function getAfterScoreMeta_(){return scoreReadMeta_(true)}
+function finalizeAfterScore_(file,name,mime,op){return scoreFinalize_(file,name,mime,op,true)}
+function deleteAfterScore_(p){return scoreDelete_(p,true)}
 
 function uploadAfterScoreDirect_(p) {
   cleanupStaleScoreUploads_();
+  const op=scorePrepareUpload_(p,true);
+  if(op.duplicate)return {ok:true,complete:true,transport:'direct',file:op.duplicate,receivedBytes:op.duplicate.size};
 
   const fileName = sanitizeScoreFileName_(String(p.fileName || '').trim());
   const mimeType = normalizeScoreMime_(String(p.mimeType || ''), fileName);
@@ -1001,7 +884,7 @@ function uploadAfterScoreDirect_(p) {
 
   try {
     makeScoreFilePublic_(file);
-    const updatedAt = finalizeAfterScore_(file, fileName, mimeType);
+    const updatedAt = finalizeAfterScore_(file, fileName, mimeType, op);
     return {
       ok: true,
       service: SCORE_STORE.APP,
@@ -1019,6 +902,8 @@ function uploadAfterScoreDirect_(p) {
 
 function startAfterScoreUpload_(p) {
   cleanupStaleScoreUploads_();
+  const op=scorePrepareUpload_(p,true);
+  if(op.duplicate)return {ok:true,complete:true,file:op.duplicate};
 
   const fileName = sanitizeScoreFileName_(String(p.fileName || '').trim());
   const mimeType = normalizeScoreMime_(String(p.mimeType || ''), fileName);
@@ -1059,6 +944,8 @@ function startAfterScoreUpload_(p) {
   const uploadId = Utilities.getUuid();
   const meta = {
     uploadId: uploadId,
+    operationId:op.operationId,
+    expectedFileId:op.expectedFileId,
     sessionUrl: sessionUrl,
     fileName: fileName,
     mimeType: mimeType,
@@ -1179,7 +1066,8 @@ function uploadAfterScoreChunk_(p) {
       const updatedAt = finalizeAfterScore_(
         file,
         String(meta.fileName || file.getName()),
-        String(meta.mimeType || file.getMimeType())
+        String(meta.mimeType || file.getMimeType()),
+        meta
       );
       meta.complete = true;
       meta.fileId = fileId;
@@ -1247,112 +1135,83 @@ function getAfterLinkFolder_(createIfMissing) {
   return folder;
 }
 
-function readAfterYoutubeLinksFile_() {
-  const folder = getAfterLinkFolder_(false);
-  if (!folder) return null;
+function mergeLinkChanges_(current,adds,removes){
+  const removed=new Set(removes);
+  return [...new Set([...current.filter(x=>!removed.has(x)),...adds])];
+}
 
-  const files = folder.getFilesByName(AFTER_LINK_STORE.FILE_NAME);
-  let newest = null;
-  let newestTime = -1;
-  while (files.hasNext()) {
-    const file = files.next();
-    try {
-      if (file.isTrashed()) continue;
-      const time = file.getLastUpdated().getTime();
-      if (time > newestTime) {
-        newest = file;
-        newestTime = time;
+function readLinkDocument_(){
+  const props=PropertiesService.getScriptProperties();
+  const pointer=props.getProperty('WORSHIP_AFTER_LINK_DOC_ID');
+  let file=null;
+  if(pointer){
+    file=DriveApp.getFileById(pointer);
+    if(file.isTrashed())throw Error('저장된 링크 원본 파일이 휴지통에 있습니다.');
+  }else{
+    const folder=getAfterLinkFolder_(false);
+    if(folder){
+      const files=folder.getFilesByName(AFTER_LINK_STORE.FILE_NAME);
+      let latest=-1;
+      while(files.hasNext()){
+        const next=files.next();
+        if(next.isTrashed())continue;
+        const time=next.getLastUpdated().getTime();
+        if(time>latest){latest=time;file=next}
       }
-    } catch (_) {}
-  }
-  if (!newest) return null;
-
-  try {
-    const parsed = JSON.parse(newest.getBlob().getDataAsString('UTF-8') || '{}');
-    const values = Array.isArray(parsed) ? parsed : parsed.links;
-    if (!Array.isArray(values)) return null;
-    return normalizeAfterYoutubeLinks_(values);
-  } catch (_) {
-    return null;
-  }
-}
-
-function writeAfterYoutubeLinksFile_(links) {
-  const folder = getAfterLinkFolder_(true);
-  const payload = JSON.stringify({
-    version: 1,
-    updatedAt: new Date().toISOString(),
-    links: normalizeAfterYoutubeLinks_(links)
-  });
-
-  // 새 파일을 먼저 만든 뒤 구 파일을 정리해 저장 중 실패 시 기존 데이터가 남도록 합니다.
-  const newFile = folder.createFile(
-    AFTER_LINK_STORE.FILE_NAME,
-    payload,
-    MimeType.PLAIN_TEXT
-  );
-
-  const files = folder.getFilesByName(AFTER_LINK_STORE.FILE_NAME);
-  while (files.hasNext()) {
-    const file = files.next();
-    if (file.getId() === newFile.getId()) continue;
-    try { file.setTrashed(true); } catch (_) {}
-  }
-  return newFile.getId();
-}
-
-function getAfterYoutubeLinks_() {
-  // Drive 파일을 영구 원본으로 우선 사용합니다.
-  const fromDrive = readAfterYoutubeLinksFile_();
-  if (fromDrive !== null) {
-    PropertiesService.getScriptProperties().setProperty(
-      AFTER_SCORE_STORE.YOUTUBE_LINKS_PROP,
-      JSON.stringify(fromDrive)
-    );
-    return fromDrive;
-  }
-
-  // 기존 v3.12.8 Script Properties 데이터가 있으면 읽고 Drive로 자동 마이그레이션합니다.
-  const raw = PropertiesService.getScriptProperties().getProperty(AFTER_SCORE_STORE.YOUTUBE_LINKS_PROP);
-  if (!raw) return [];
-
-  try {
-    const links = normalizeAfterYoutubeLinks_(JSON.parse(raw));
-    try { writeAfterYoutubeLinksFile_(links); } catch (_) {}
-    return links;
-  } catch (_) {
-    return [];
-  }
-}
-
-function setAfterYoutubeLinks_(linksJson) {
-  let parsed = [];
-  try {
-    parsed = JSON.parse(String(linksJson || '[]'));
-  } catch (_) {
-    throw new Error('YouTube 링크 목록 형식이 올바르지 않습니다.');
-  }
-
-  const links = normalizeAfterYoutubeLinks_(parsed);
-  const lock = LockService.getScriptLock();
-  lock.waitLock(10000);
-  try {
-    // Properties + Drive JSON 두 곳 모두 기록합니다.
-    PropertiesService.getScriptProperties().setProperty(
-      AFTER_SCORE_STORE.YOUTUBE_LINKS_PROP,
-      JSON.stringify(links)
-    );
-    writeAfterYoutubeLinksFile_(links);
-
-    // 기록 직후 영구 원본을 다시 읽어 실제 저장값까지 검증합니다.
-    const verified = readAfterYoutubeLinksFile_();
-    if (verified === null || JSON.stringify(verified) !== JSON.stringify(links)) {
-      throw new Error('예배 후 YouTube 링크 저장 검증에 실패했습니다.');
     }
-    return verified;
-  } finally {
-    lock.releaseLock();
   }
+  if(file){
+    const data=JSON.parse(file.getBlob().getDataAsString('UTF-8'));
+    const raw=Array.isArray(data)?data:data.links;
+    if(!Array.isArray(raw))throw Error('링크 원본 형식 오류 · 기존 데이터 보호');
+    return {links:normalizeAfterYoutubeLinks_(raw),revision:Number(data.revision||0),receipts:Array.isArray(data.receipts)?data.receipts:[],fileId:file.getId()};
+  }
+  const legacy=props.getProperty(AFTER_SCORE_STORE.YOUTUBE_LINKS_PROP);
+  const raw=legacy?JSON.parse(legacy):[];
+  if(!Array.isArray(raw))throw Error('링크 백업 형식 오류');
+  return {links:normalizeAfterYoutubeLinks_(raw),revision:0,receipts:[],fileId:''};
+}
+
+function writeLinkDocument_(doc){
+  const folder=getAfterLinkFolder_(true),props=PropertiesService.getScriptProperties();
+  const newFile=folder.createFile(AFTER_LINK_STORE.FILE_NAME,JSON.stringify({version:2,revision:doc.revision,links:doc.links,receipts:doc.receipts,updatedAt:new Date().toISOString()}),MimeType.PLAIN_TEXT);
+  // Verify candidate file before changing the authoritative pointer.
+  const actual=JSON.parse(newFile.getBlob().getDataAsString('UTF-8'));
+  if(JSON.stringify(actual.links)!==JSON.stringify(doc.links)||JSON.stringify(actual.receipts)!==JSON.stringify(doc.receipts)||Number(actual.revision)!==doc.revision){try{newFile.setTrashed(true)}catch(_){}throw Error('링크 후보 파일 검증 실패')}
+  props.setProperty('WORSHIP_AFTER_LINK_DOC_ID',newFile.getId());
+  // Mirror is best effort; pointer remains authoritative.
+  try{props.setProperty(AFTER_SCORE_STORE.YOUTUBE_LINKS_PROP,JSON.stringify(doc.links))}catch(_){}
+  const files=folder.getFilesByName(AFTER_LINK_STORE.FILE_NAME);
+  while(files.hasNext()){const old=files.next();if(old.getId()!==newFile.getId())try{old.setTrashed(true)}catch(_){}}
+}
+
+function getAfterYoutubeLinks_(){
+  const lock=LockService.getScriptLock();lock.waitLock(10000);
+  try{
+    const d=readLinkDocument_();
+    return {links:d.links,linksRevision:d.revision,verifiedOperationIds:d.receipts.map(x=>x.id)};
+  }finally{lock.releaseLock()}
+}
+
+function setAfterYoutubeLinks_(p){
+  const id=String(p.operationId||'');
+  if(!/^link_[a-zA-Z0-9_]{8,100}$/.test(id))throw Error('링크 저장은 최신 앱에서 다시 시도해주세요.');
+  const rawAdd=JSON.parse(String(p.addsJson||'[]')),rawRemove=JSON.parse(String(p.removesJson||'[]'));
+  if(!Array.isArray(rawAdd)||!Array.isArray(rawRemove))throw Error('링크 변경 형식 오류');
+  const adds=normalizeAfterYoutubeLinks_(rawAdd),removes=normalizeAfterYoutubeLinks_(rawRemove);
+  if(adds.some(x=>removes.includes(x)))throw Error('동일 링크 추가/삭제 요청 오류');
+  const lock=LockService.getScriptLock();lock.waitLock(10000);
+  try{
+    const d=readLinkDocument_();
+    if(d.receipts.some(x=>x.id===id))return {links:d.links,linksRevision:d.revision,verifiedOperationIds:d.receipts.map(x=>x.id),duplicate:true};
+    const next=mergeLinkChanges_(d.links,adds,removes);
+    if(JSON.stringify(normalizeAfterYoutubeLinks_(next))!==JSON.stringify(next))throw Error('링크 개수 또는 형식 제한 초과');
+    const doc={links:next,revision:d.revision+1,receipts:[...d.receipts,{id,revision:d.revision+1}].slice(-200)};
+    writeLinkDocument_(doc);
+    const actual=readLinkDocument_();
+    if(actual.revision!==doc.revision||JSON.stringify(actual.links)!==JSON.stringify(next)||!actual.receipts.some(x=>x.id===id))throw Error('링크 DB 검증 실패');
+    return {links:actual.links,linksRevision:actual.revision,verifiedOperationIds:actual.receipts.map(x=>x.id)};
+  }finally{lock.releaseLock()}
 }
 
 function cleanupStaleScoreUploads_() {
@@ -1383,9 +1242,9 @@ function scoreReply_(data, requestId) {
   }, data || {});
 
   const json = JSON.stringify(payload)
-    .replace(/</g, '\u003c')
-    .replace(/>/g, '\u003e')
-    .replace(/&/g, '\u0026');
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026');
 
   const html =
     '<!doctype html><html><head><meta charset="utf-8"></head><body>' +
