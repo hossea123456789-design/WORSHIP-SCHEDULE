@@ -1,14 +1,15 @@
 # WORSHIP-SCHEDULE 개발 인수인계 / DB 저장·동기화 공통 지침
 
 ## 현재 버전과 상태 (2026-11-26)
-- 프런트엔드: v3.22.0, `index.html` (GitHub Pages main)
+- 프런트엔드: v3.22.1, `index.html` (GitHub Pages main)
 - 일정 Apps Script 소스: v3.22.0, `Code_FAST_SCHEDULE.gs.txt`
 - 악보 Apps Script 소스: v3.22.0, `WORSHIP_SCORE_API_Code.gs.txt`
 - 운영 주소: https://hossea123456789-design.github.io/WORSHIP-SCHEDULE/
 - 위 두 서버 파일은 배포용 원본이다. 저장소에 커밋하더라도 Apps Script 웹앱은 자동 갱신되지 않는다.
 - v3.21.3: JSONP/POST 읽기 경로 자동 전환, 서버별·브라우저별 성공 경로 기억, POST 출처 및 요청 식별자 검사.
+- v3.22.1: 캐시와 서버 revision 일치 시 진행률 타이머 종료 및 연결 완료 표시. 백그라운드 bootstrap/재접속에도 동일 종료 처리 적용. 저장 대기·충돌·업로드 상태는 유지. 자료 조회는 일정 연결 완료와 분리. 서버 API 계약은 v3.22.0 유지.
 - v3.22.0: 모든 일정 변경의 공통 대기열 통합, 원본 항목 비교 기반 충돌 처리, 실제 Sheets 재조회 및 요청별 검증 영수증, Drive 링크 변경분 병합, 악보 파일 교체 CAS, 초안 보호, 진단 JSON 내보내기.
-- 현재 검증: 실제 저장소 소스 문법 검사 및 모의 회귀 26개 통과. 운영 Apps Script 배포·운영 DB 및 PC/모바일 실기기 테스트는 별도 확인이 필요하다. 모의 테스트를 운영 테스트로 표시하지 않는다.
+- 현재 검증: 실제 저장소 소스 문법 검사 및 모의 회귀 26개 및 연결 상태 모의 테스트 8개 통과. 운영 Apps Script 배포·운영 DB 및 PC/모바일 실기기 테스트는 별도 확인이 필요하다. 모의 테스트를 운영 테스트로 표시하지 않는다.
 - 과거 `Code.gs.txt`, `Code_FAST.gs.txt`, `WorshipApi.gs.txt`, `WorshipScheduleBackend.gs.txt`, `WorshipStandalone.gs.txt`, `index_v37_ready.html`은 이전/대체 구조 참고 자료이며 현행 운영 배포 원본과 혼용하지 않는다.
 
 ## 핵심 데이터 구조
